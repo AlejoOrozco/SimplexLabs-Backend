@@ -1,0 +1,336 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// -----------------------------------------------------------------------------
+// Enums (Prisma forbids an enum and a model sharing the same name; the join
+// table for plan ↔ feature is modeled as PlanIncludedFeature → table plan_features.)
+// -----------------------------------------------------------------------------
+
+enum Role {
+  SUPER_ADMIN
+  CLIENT
+}
+
+enum Niche {
+  GYM
+  MEDICAL
+  ENTREPRENEUR
+}
+
+enum PlanFeature {
+  WEBSITE
+  MARKETING
+  AGENTS
+}
+
+enum Channel {
+  WHATSAPP
+  INSTAGRAM
+  MESSENGER
+}
+
+enum SubStatus {
+  ACTIVE
+  PAUSED
+  CANCELLED
+}
+
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum AppointmentType {
+  SIMPLEX_WITH_CLIENT
+  CLIENT_WITH_CONTACT
+  EXTERNAL
+}
+
+enum AppointmentStatus {
+  PENDING
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+}
+
+enum ConvoStatus {
+  OPEN
+  CLOSED
+  PENDING
+}
+
+enum SenderType {
+  AGENT
+  CONTACT
+}
+
+enum ProductType {
+  PRODUCT
+  SERVICE
+}
+
+enum ContactSource {
+  WHATSAPP
+  INSTAGRAM
+  MESSENGER
+  MANUAL
+}
+
+// -----------------------------------------------------------------------------
+// Models
+// -----------------------------------------------------------------------------
+
+model Company {
+  id        String   @id @default(uuid())
+  name      String   @map("name")
+  niche     Niche    @map("niche")
+  phone     String?  @map("phone")
+  address   String?  @map("address")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  users           User[]           @relation("CompanyUsers")
+  clientContacts  ClientContact[]  @relation("CompanyClientContacts")
+  subscriptions   Subscription[]   @relation("CompanySubscriptions")
+  websites        Website[]        @relation("CompanyWebsites")
+  products        Product[]        @relation("CompanyProducts")
+  appointments    Appointment[]    @relation("CompanyAppointments")
+  conversations   Conversation[]   @relation("CompanyConversations")
+  orders          Order[]          @relation("CompanyOrders")
+
+  @@map("companies")
+}
+
+model User {
+  id         String   @id @default(uuid())
+  supabaseId String   @unique @map("supabase_id")
+  email      String   @unique @map("email")
+  firstName  String   @map("first_name")
+  lastName   String   @map("last_name")
+  role       Role     @default(CLIENT) @map("role")
+  isActive   Boolean  @default(true) @map("is_active")
+  companyId  String?  @map("company_id")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  company Company? @relation("CompanyUsers", fields: [companyId], references: [id], onDelete: SetNull)
+
+  organizedAppointments Appointment[]    @relation("AppointmentOrganizer")
+  orderStatusHistory    OrderStatusHistory[] @relation("OrderStatusChangedBy")
+
+  @@map("users")
+}
+
+model ClientContact {
+  id        String   @id @default(uuid())
+  companyId String   @map("company_id")
+  firstName String   @map("first_name")
+  lastName  String   @map("last_name")
+  email     String?  @map("email")
+  phone     String?  @map("phone")
+  source    ContactSource @map("source")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  company Company @relation("CompanyClientContacts", fields: [companyId], references: [id], onDelete: Cascade)
+
+  orders         Order[]         @relation("ContactOrders")
+  conversations  Conversation[]  @relation("ContactConversations")
+  appointments   Appointment[]   @relation("ContactAppointments")
+
+  @@map("client_contacts")
+}
+
+model Plan {
+  id           String   @id @default(uuid())
+  name         String   @map("name")
+  niche        Niche    @map("niche")
+  priceMonthly Decimal  @map("price_monthly") @db.Decimal(12, 2)
+  setupFee     Decimal  @map("setup_fee") @db.Decimal(12, 2)
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  includedFeatures PlanIncludedFeature[] @relation("PlanIncludedFeatures")
+  planChannels     PlanChannel[]         @relation("PlanChannels")
+  subscriptions    Subscription[]        @relation("PlanSubscriptions")
+
+  @@map("plans")
+}
+
+model PlanIncludedFeature {
+  id        String      @id @default(uuid())
+  planId    String      @map("plan_id")
+  feature   PlanFeature @map("feature")
+  createdAt DateTime    @default(now()) @map("created_at")
+  updatedAt DateTime    @updatedAt @map("updated_at")
+
+  plan Plan @relation("PlanIncludedFeatures", fields: [planId], references: [id], onDelete: Cascade)
+
+  @@unique([planId, feature])
+  @@map("plan_features")
+}
+
+model PlanChannel {
+  id        String   @id @default(uuid())
+  planId    String   @map("plan_id")
+  channel   Channel  @map("channel")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  plan Plan @relation("PlanChannels", fields: [planId], references: [id], onDelete: Cascade)
+
+  @@unique([planId, channel])
+  @@map("plan_channels")
+}
+
+model Subscription {
+  id             String     @id @default(uuid())
+  companyId      String     @map("company_id")
+  planId         String     @map("plan_id")
+  status         SubStatus  @default(ACTIVE) @map("status")
+  initialPayment Decimal    @map("initial_payment") @db.Decimal(12, 2)
+  startedAt      DateTime   @map("started_at")
+  nextBillingAt  DateTime?  @map("next_billing_at")
+  createdAt      DateTime   @default(now()) @map("created_at")
+  updatedAt      DateTime   @updatedAt @map("updated_at")
+
+  company Company @relation("CompanySubscriptions", fields: [companyId], references: [id], onDelete: Cascade)
+  plan    Plan    @relation("PlanSubscriptions", fields: [planId], references: [id], onDelete: Restrict)
+
+  @@map("subscriptions")
+}
+
+model Website {
+  id        String   @id @default(uuid())
+  companyId String   @map("company_id")
+  url       String   @map("url")
+  label     String?  @map("label")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  company Company @relation("CompanyWebsites", fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@map("websites")
+}
+
+model Product {
+  id          String      @id @default(uuid())
+  companyId   String      @map("company_id")
+  name        String      @map("name")
+  description String?     @map("description")
+  type        ProductType @map("type")
+  price       Decimal     @map("price") @db.Decimal(12, 2)
+  isActive    Boolean     @default(true) @map("is_active")
+  createdAt   DateTime    @default(now()) @map("created_at")
+  updatedAt   DateTime    @updatedAt @map("updated_at")
+
+  company Company @relation("CompanyProducts", fields: [companyId], references: [id], onDelete: Cascade)
+
+  orders        Order[]        @relation("ProductOrders")
+  appointments  Appointment[]  @relation("ProductAppointments")
+
+  @@map("products")
+}
+
+model Order {
+  id        String      @id @default(uuid())
+  companyId String      @map("company_id")
+  contactId String      @map("contact_id")
+  productId String      @map("product_id")
+  status    OrderStatus @default(PENDING) @map("status")
+  amount    Decimal     @map("amount") @db.Decimal(12, 2)
+  notes     String?     @map("notes")
+  createdAt DateTime    @default(now()) @map("created_at")
+  updatedAt DateTime    @updatedAt @map("updated_at")
+
+  company Company       @relation("CompanyOrders", fields: [companyId], references: [id], onDelete: Cascade)
+  contact ClientContact @relation("ContactOrders", fields: [contactId], references: [id], onDelete: Restrict)
+  product Product       @relation("ProductOrders", fields: [productId], references: [id], onDelete: Restrict)
+
+  statusHistory OrderStatusHistory[] @relation("OrderStatusHistoryLines")
+
+  @@map("orders")
+}
+
+model OrderStatusHistory {
+  id          String       @id @default(uuid())
+  orderId     String       @map("order_id")
+  changedById String       @map("changed_by_id")
+  prevStatus  OrderStatus? @map("prev_status")
+  newStatus   OrderStatus  @map("new_status")
+  reason      String?      @map("reason")
+  createdAt   DateTime     @default(now()) @map("created_at")
+
+  order     Order @relation("OrderStatusHistoryLines", fields: [orderId], references: [id], onDelete: Cascade)
+  changedBy User  @relation("OrderStatusChangedBy", fields: [changedById], references: [id], onDelete: Restrict)
+
+  @@map("order_status_history")
+}
+
+model Appointment {
+  id                    String            @id @default(uuid())
+  companyId             String            @map("company_id")
+  organizerId           String            @map("organizer_id")
+  contactId             String?           @map("contact_id")
+  productId             String?           @map("product_id")
+  title                 String            @map("title")
+  description           String?           @map("description")
+  type                  AppointmentType   @map("type")
+  status                AppointmentStatus @default(PENDING) @map("status")
+  scheduledAt           DateTime          @map("scheduled_at")
+  durationMinutes       Int               @default(30) @map("duration_minutes")
+  meetingUrl            String?           @map("meeting_url")
+  externalAttendeeName  String?           @map("external_attendee_name")
+  externalAttendeeEmail String?           @map("external_attendee_email")
+  createdAt             DateTime          @default(now()) @map("created_at")
+  updatedAt             DateTime          @updatedAt @map("updated_at")
+
+  company   Company        @relation("CompanyAppointments", fields: [companyId], references: [id], onDelete: Cascade)
+  organizer User           @relation("AppointmentOrganizer", fields: [organizerId], references: [id], onDelete: Restrict)
+  contact   ClientContact? @relation("ContactAppointments", fields: [contactId], references: [id], onDelete: SetNull)
+  product   Product?       @relation("ProductAppointments", fields: [productId], references: [id], onDelete: SetNull)
+
+  @@map("appointments")
+}
+
+model Conversation {
+  id        String      @id @default(uuid())
+  companyId String      @map("company_id")
+  contactId String      @map("contact_id")
+  channel   Channel     @map("channel")
+  status    ConvoStatus @default(OPEN) @map("status")
+  createdAt DateTime    @default(now()) @map("created_at")
+  updatedAt DateTime    @updatedAt @map("updated_at")
+
+  company Company       @relation("CompanyConversations", fields: [companyId], references: [id], onDelete: Cascade)
+  contact ClientContact @relation("ContactConversations", fields: [contactId], references: [id], onDelete: Cascade)
+
+  messages Message[] @relation("ConversationMessages")
+
+  @@unique([contactId, channel])
+  @@map("conversations")
+}
+
+model Message {
+  id             String     @id @default(uuid())
+  conversationId String     @map("conversation_id")
+  senderType     SenderType @map("sender_type")
+  content        String     @map("content") @db.Text
+  metadata       Json?      @map("metadata")
+  sentAt         DateTime   @default(now()) @map("sent_at")
+  deliveredAt    DateTime?  @map("delivered_at")
+
+  conversation Conversation @relation("ConversationMessages", fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@map("messages")
+}
