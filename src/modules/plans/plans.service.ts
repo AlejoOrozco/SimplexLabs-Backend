@@ -4,28 +4,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { CreatePlanDto } from './dto/create-plan.dto';
 import { UpdatePlanDto } from './dto/update-plan.dto';
 import { PlanResponseDto } from './dto/plan-response.dto';
-
-const planInclude = {
-  includedFeatures: { select: { feature: true } },
-  planChannels: { select: { channel: true } },
-} satisfies Prisma.PlanInclude;
-
-type PlanWithRelations = Prisma.PlanGetPayload<{ include: typeof planInclude }>;
-
-function toResponse(plan: PlanWithRelations): PlanResponseDto {
-  return {
-    id: plan.id,
-    name: plan.name,
-    niche: plan.niche,
-    priceMonthly: plan.priceMonthly.toString(),
-    setupFee: plan.setupFee.toString(),
-    isActive: plan.isActive,
-    features: plan.includedFeatures.map((f) => f.feature),
-    channels: plan.planChannels.map((c) => c.channel),
-    createdAt: plan.createdAt,
-    updatedAt: plan.updatedAt,
-  };
-}
+import { planInclude, toPlanResponse, PlanWithRelations } from './plan.mapper';
 
 function uniqueValues<T>(values: T[] | undefined): T[] {
   if (!values) return [];
@@ -42,12 +21,12 @@ export class PlansService {
       include: planInclude,
       orderBy: [{ niche: 'asc' }, { priceMonthly: 'asc' }],
     });
-    return plans.map(toResponse);
+    return plans.map(toPlanResponse);
   }
 
   async findOne(id: string): Promise<PlanResponseDto> {
     const plan = await this.loadOrThrow(id);
-    return toResponse(plan);
+    return toPlanResponse(plan);
   }
 
   async create(dto: CreatePlanDto): Promise<PlanResponseDto> {
@@ -70,7 +49,7 @@ export class PlansService {
       include: planInclude,
     });
 
-    return toResponse(created);
+    return toPlanResponse(created);
   }
 
   async update(id: string, dto: UpdatePlanDto): Promise<PlanResponseDto> {
@@ -107,7 +86,7 @@ export class PlansService {
       });
     });
 
-    return toResponse(updated);
+    return toPlanResponse(updated);
   }
 
   async remove(id: string): Promise<{ deleted: boolean }> {
