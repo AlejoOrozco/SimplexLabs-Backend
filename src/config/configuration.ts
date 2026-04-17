@@ -12,4 +12,8 @@ export const configuration = () => ({
     expiresIn: process.env.JWT_EXPIRES_IN ?? '15m',
     refreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN ?? '7d',
   },
+  meta: {
+    webhookVerifyToken: process.env.META_WEBHOOK_VERIFY_TOKEN ?? '',
+    appSecret: process.env.META_APP_SECRET ?? '',
+  },
 });
