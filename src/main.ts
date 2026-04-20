@@ -35,7 +35,10 @@ async function bootstrap(): Promise<void> {
   app.useGlobalInterceptors(new ResponseInterceptor(app.get(Reflector)));
   app.setGlobalPrefix('api/v1');
 
-  if (config.get<string>('nodeEnv') !== 'production') {
+  const isProduction = config.get<string>('nodeEnv') === 'production';
+  const enableSwagger = !isProduction || config.get<boolean>('enableSwagger');
+
+  if (enableSwagger) {
     const swaggerConfig = new DocumentBuilder()
       .setTitle('SimplexLabs API')
       .setDescription('SimplexLabs platform backend API')
@@ -43,8 +46,12 @@ async function bootstrap(): Promise<void> {
       .addCookieAuth('access_token')
       .build();
     const document = SwaggerModule.createDocument(app, swaggerConfig);
-    SwaggerModule.setup('docs', app, document);
-    logger.log('Swagger docs available at /docs');
+    SwaggerModule.setup('docs', app, document, { useGlobalPrefix: true });
+    logger.log('Swagger UI: GET /api/v1/docs');
+  } else {
+    logger.log(
+      'Swagger UI disabled in production. Set ENABLE_SWAGGER=true to enable, or use GET /api/v1/health to verify the server.',
+    );
   }
 
   const port = config.get<number>('port') ?? 3000;

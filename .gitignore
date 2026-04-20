@@ -4,6 +4,7 @@
 /build
 
 .env
+.md
 
 # Logs
 logs

@@ -16,11 +16,13 @@ import { OrdersModule } from './modules/orders/orders.module';
 import { AppointmentsModule } from './modules/appointments/appointments.module';
 import { ConversationsModule } from './modules/conversations/conversations.module';
 import { WebhooksModule } from './modules/webhooks/webhooks.module';
+import { HealthModule } from './health/health.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true, load: [configuration] }),
     ThrottlerModule.forRoot([{ ttl: 60000, limit: 100 }]),
+    HealthModule,
     CommonModule,
     PrismaModule,
     AuthModule,

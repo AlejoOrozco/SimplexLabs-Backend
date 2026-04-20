@@ -1,6 +1,8 @@
 export const configuration = () => ({
   port: parseInt(process.env.PORT ?? '8000', 10),
   nodeEnv: process.env.NODE_ENV ?? 'development',
+  /** When true, serves OpenAPI UI even if NODE_ENV is production (set on Railway if you need /docs). */
+  enableSwagger: process.env.ENABLE_SWAGGER === 'true',
   frontendUrl: process.env.FRONTEND_URL ?? 'http://localhost:8000',
   supabase: {
     url: process.env.SUPABASE_URL ?? '',
