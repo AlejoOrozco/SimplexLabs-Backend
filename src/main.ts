@@ -2,6 +2,7 @@ import { NestFactory, Reflector } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import type { CustomOrigin } from '@nestjs/common/interfaces/external/cors-options.interface';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
@@ -16,8 +17,17 @@ async function bootstrap(): Promise<void> {
   app.use(helmet());
   app.use(cookieParser());
 
+  const allowedOrigins = config.get<string[]>('frontendUrls') ?? [];
+  const corsOrigin: CustomOrigin = (origin, callback) => {
+    // Allow same-origin/non-browser requests (curl, server-to-server) where Origin is absent.
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+      return;
+    }
+    callback(new Error(`Origin ${origin} not allowed by CORS`), false);
+  };
   app.enableCors({
-    origin: config.get<string>('frontendUrl'),
+    origin: corsOrigin,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],

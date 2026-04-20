@@ -13,6 +13,7 @@ import {
 import { ApiTags, ApiOperation, ApiCookieAuth } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
 import type { Request, Response, CookieOptions } from 'express';
+import type { CookieConfig } from '../../config/configuration';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
@@ -136,10 +137,15 @@ export class AuthController {
   }
 
   private baseCookieOptions(): CookieOptions {
+    const cookieConfig = this.config.get<CookieConfig>('cookie');
+    // Cross-site cookies (Vercel frontend -> Railway backend) require SameSite=None
+    // which also requires Secure=true. Defaults are env-driven via config.
+    const sameSite = cookieConfig?.sameSite ?? 'lax';
+    const secure = cookieConfig?.secure ?? false;
     return {
       httpOnly: true,
-      secure: this.config.get<string>('nodeEnv') === 'production',
-      sameSite: 'strict',
+      secure: sameSite === 'none' ? true : secure,
+      sameSite,
       path: '/',
     };
   }

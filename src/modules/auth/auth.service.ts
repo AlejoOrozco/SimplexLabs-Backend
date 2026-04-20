@@ -204,7 +204,9 @@ export class AuthService {
 
   getOAuthUrl(provider: 'google'): string {
     const supabaseUrl = this.config.get<string>('supabase.url') ?? '';
-    const frontendUrl = this.config.get<string>('frontendUrl') ?? '';
+    // Use the primary (first) configured frontend URL as the OAuth redirect target.
+    const frontendUrls = this.config.get<string[]>('frontendUrls') ?? [];
+    const frontendUrl = frontendUrls[0] ?? '';
     const redirect = encodeURIComponent(`${frontendUrl}/auth/callback`);
     return `${supabaseUrl}/auth/v1/authorize?provider=${provider}&redirect_to=${redirect}`;
   }
