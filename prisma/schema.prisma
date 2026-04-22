@@ -84,6 +84,12 @@ enum ContactSource {
   MANUAL
 }
 
+enum AgentRole {
+  ANALYZER
+  RETRIEVER
+  RESPONDER
+}
+
 // -----------------------------------------------------------------------------
 // Models
 // -----------------------------------------------------------------------------
@@ -105,6 +111,8 @@ model Company {
   appointments    Appointment[]    @relation("CompanyAppointments")
   conversations   Conversation[]   @relation("CompanyConversations")
   orders          Order[]          @relation("CompanyOrders")
+  agentConfigs    AgentConfig[]    @relation("CompanyAgentConfigs")
+  agentKnowledgeBase AgentKnowledgeBase[] @relation("CompanyAgentKnowledgeBase")
 
   @@map("companies")
 }
@@ -304,18 +312,21 @@ model Appointment {
 }
 
 model Conversation {
-  id        String      @id @default(uuid())
-  companyId String      @map("company_id")
-  contactId String      @map("contact_id")
-  channel   Channel     @map("channel")
-  status    ConvoStatus @default(OPEN) @map("status")
-  createdAt DateTime    @default(now()) @map("created_at")
-  updatedAt DateTime    @updatedAt @map("updated_at")
+  id             String      @id @default(uuid())
+  companyId      String      @map("company_id")
+  contactId      String      @map("contact_id")
+  agentConfigId  String?     @map("agent_config_id")
+  channel        Channel     @map("channel")
+  status         ConvoStatus @default(OPEN) @map("status")
+  createdAt      DateTime    @default(now()) @map("created_at")
+  updatedAt      DateTime    @updatedAt @map("updated_at")
 
-  company Company       @relation("CompanyConversations", fields: [companyId], references: [id], onDelete: Cascade)
-  contact ClientContact @relation("ContactConversations", fields: [contactId], references: [id], onDelete: Cascade)
+  company     Company       @relation("CompanyConversations", fields: [companyId], references: [id], onDelete: Cascade)
+  contact     ClientContact @relation("ContactConversations", fields: [contactId], references: [id], onDelete: Cascade)
+  agentConfig AgentConfig?  @relation("AgentConfigConversations", fields: [agentConfigId], references: [id], onDelete: SetNull)
 
-  messages Message[] @relation("ConversationMessages")
+  messages  Message[]   @relation("ConversationMessages")
+  agentRuns AgentRun[]  @relation("ConversationAgentRuns")
 
   @@unique([contactId, channel])
   @@map("conversations")
@@ -324,6 +335,7 @@ model Conversation {
 model Message {
   id             String     @id @default(uuid())
   conversationId String     @map("conversation_id")
+  agentRunId     String?    @map("agent_run_id")
   senderType     SenderType @map("sender_type")
   content        String     @map("content") @db.Text
   metadata       Json?      @map("metadata")
@@ -331,6 +343,90 @@ model Message {
   deliveredAt    DateTime?  @map("delivered_at")
 
   conversation Conversation @relation("ConversationMessages", fields: [conversationId], references: [id], onDelete: Cascade)
+  agentRun     AgentRun?    @relation("AgentRunGeneratedMessages", fields: [agentRunId], references: [id], onDelete: SetNull)
+
+  triggeredAgentRuns AgentRun[] @relation("MessageAgentRuns")
 
   @@map("messages")
+}
+
+// -----------------------------------------------------------------------------
+// Agent system
+// -----------------------------------------------------------------------------
+
+model AgentConfig {
+  id                 String   @id @default(cuid())
+  companyId          String   @map("company_id")
+  name               String   @map("name")
+  isActive           Boolean  @default(true) @map("is_active")
+  channels           Channel[] @map("channels")
+  fallbackMessage    String   @map("fallback_message")
+  escalationMessage  String   @map("escalation_message")
+  language           String   @default("es") @map("language")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  company Company @relation("CompanyAgentConfigs", fields: [companyId], references: [id], onDelete: Cascade)
+
+  prompts       AgentPrompt[]  @relation("AgentConfigPrompts")
+  conversations Conversation[] @relation("AgentConfigConversations")
+
+  @@map("agent_configs")
+}
+
+model AgentPrompt {
+  id            String    @id @default(cuid())
+  agentConfigId String    @map("agent_config_id")
+  role          AgentRole @map("role")
+  systemPrompt  String    @map("system_prompt") @db.Text
+  model         String    @map("model")
+  temperature   Float     @default(0.7) @map("temperature")
+  maxTokens     Int       @default(500) @map("max_tokens")
+  isActive      Boolean   @default(true) @map("is_active")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  agentConfig AgentConfig @relation("AgentConfigPrompts", fields: [agentConfigId], references: [id], onDelete: Cascade)
+
+  @@unique([agentConfigId, role])
+  @@map("agent_prompts")
+}
+
+model AgentKnowledgeBase {
+  id        String   @id @default(cuid())
+  companyId String   @map("company_id")
+  title     String   @map("title")
+  content   String   @map("content") @db.Text
+  category  String?  @map("category")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  company Company @relation("CompanyAgentKnowledgeBase", fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@map("agent_knowledge_base")
+}
+
+model AgentRun {
+  id               String   @id @default(cuid())
+  conversationId   String   @map("conversation_id")
+  messageId        String   @map("message_id")
+  analyzerInput    Json     @map("analyzer_input")
+  analyzerOutput   Json     @map("analyzer_output")
+  retrieverInput   Json     @map("retriever_input")
+  retrieverOutput  Json     @map("retriever_output")
+  responderInput   Json     @map("responder_input")
+  responderOutput  Json     @map("responder_output")
+  totalTokens      Int      @default(0) @map("total_tokens")
+  durationMs       Int      @default(0) @map("duration_ms")
+  success          Boolean  @default(true) @map("success")
+  error            String?  @map("error")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  conversation    Conversation @relation("ConversationAgentRuns", fields: [conversationId], references: [id], onDelete: Cascade)
+  triggerMessage  Message      @relation("MessageAgentRuns", fields: [messageId], references: [id], onDelete: Cascade)
+
+  generatedMessages Message[] @relation("AgentRunGeneratedMessages")
+
+  @@map("agent_runs")
 }

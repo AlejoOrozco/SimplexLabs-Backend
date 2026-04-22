@@ -52,8 +52,14 @@ export const configuration = () => ({
   meta: {
     webhookVerifyToken: process.env.META_WEBHOOK_VERIFY_TOKEN ?? '',
     appSecret: process.env.META_APP_SECRET ?? '',
+    accessToken: process.env.META_ACCESS_TOKEN ?? '',
+    whatsappPhoneNumberId: process.env.META_WHATSAPP_PHONE_NUMBER_ID ?? '',
+    whatsappBusinessAccountId:
+      process.env.META_WHATSAPP_BUSINESS_ACCOUNT_ID ?? '',
+    apiVersion: process.env.META_API_VERSION ?? 'v19.0',
   },
 });
 
 export type AppConfig = ReturnType<typeof configuration>;
 export type CookieConfig = AppConfig['cookie'];
+export type MetaConfig = AppConfig['meta'];
