@@ -3,6 +3,7 @@ import type {
   AppointmentStatus,
   AppointmentType,
   ProductType,
+  StaffRole,
 } from '@prisma/client';
 
 export class AppointmentOrganizerDto {
@@ -45,6 +46,20 @@ export class AppointmentProductSummaryDto {
 
   @ApiProperty({ description: 'Decimal serialized as string' })
   price!: string;
+}
+
+export class AppointmentStaffSummaryDto {
+  @ApiProperty()
+  id!: string;
+
+  @ApiProperty()
+  firstName!: string;
+
+  @ApiProperty()
+  lastName!: string;
+
+  @ApiProperty({ enum: ['OWNER', 'EMPLOYEE'] })
+  role!: StaffRole;
 }
 
 export class AppointmentResponseDto {
@@ -108,4 +123,10 @@ export class AppointmentResponseDto {
 
   @ApiProperty({ type: AppointmentProductSummaryDto, nullable: true })
   product!: AppointmentProductSummaryDto | null;
+
+  @ApiProperty({ type: String, nullable: true })
+  staffId!: string | null;
+
+  @ApiProperty({ type: AppointmentStaffSummaryDto, nullable: true })
+  staff!: AppointmentStaffSummaryDto | null;
 }

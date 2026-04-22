@@ -70,6 +70,7 @@ enum ConvoStatus {
 enum SenderType {
   AGENT
   CONTACT
+  HUMAN
 }
 
 enum ProductType {
@@ -88,6 +89,63 @@ enum AgentRole {
   ANALYZER
   RETRIEVER
   RESPONDER
+  DECIDER
+  EXECUTOR
+}
+
+enum ConversationControlMode {
+  AGENT
+  HUMAN
+}
+
+enum ConversationLifecycleStatus {
+  NEW
+  AGENT_ANALYZING
+  INTERESTED
+  APPOINTMENT_PENDING
+  APPOINTMENT_BOOKED
+  ORDER_PLACED
+  PAYMENT_INITIATED
+  PAYMENT_PENDING_REVIEW
+  PAYMENT_CONFIRMED
+  NEEDS_ATTENTION
+  AGENT_REPLIED_WAITING
+  AUTO_CLOSED_INACTIVE
+  CLOSED_BY_CLIENT
+}
+
+enum PaymentMethod {
+  STRIPE
+  WIRE_TRANSFER
+}
+
+enum PaymentStatus {
+  INITIATED
+  AWAITING_SCREENSHOT
+  PENDING_REVIEW
+  CONFIRMED
+  FAILED
+  CANCELLED
+  REFUNDED
+}
+
+enum NotificationChannel {
+  IN_APP
+  WHATSAPP
+  EMAIL
+}
+
+enum NotificationType {
+  APPOINTMENT_REQUESTED
+  PAYMENT_SCREENSHOT_RECEIVED
+  AGENT_NEEDS_ATTENTION
+  ORDER_PLACED
+  PIPELINE_FAILED
+}
+
+enum StaffRole {
+  OWNER
+  EMPLOYEE
 }
 
 // -----------------------------------------------------------------------------
@@ -103,16 +161,22 @@ model Company {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  users           User[]           @relation("CompanyUsers")
-  clientContacts  ClientContact[]  @relation("CompanyClientContacts")
-  subscriptions   Subscription[]   @relation("CompanySubscriptions")
-  websites        Website[]        @relation("CompanyWebsites")
-  products        Product[]        @relation("CompanyProducts")
-  appointments    Appointment[]    @relation("CompanyAppointments")
-  conversations   Conversation[]   @relation("CompanyConversations")
-  orders          Order[]          @relation("CompanyOrders")
-  agentConfigs    AgentConfig[]    @relation("CompanyAgentConfigs")
+  users              User[]               @relation("CompanyUsers")
+  clientContacts     ClientContact[]      @relation("CompanyClientContacts")
+  subscriptions      Subscription[]       @relation("CompanySubscriptions")
+  websites           Website[]            @relation("CompanyWebsites")
+  products           Product[]            @relation("CompanyProducts")
+  appointments       Appointment[]        @relation("CompanyAppointments")
+  conversations      Conversation[]       @relation("CompanyConversations")
+  orders             Order[]              @relation("CompanyOrders")
+  agentConfigs       AgentConfig[]        @relation("CompanyAgentConfigs")
   agentKnowledgeBase AgentKnowledgeBase[] @relation("CompanyAgentKnowledgeBase")
+  channels           CompanyChannel[]     @relation("CompanyChannels")
+  staff              Staff[]              @relation("CompanyStaff")
+  blockedTimes       BlockedTime[]        @relation("CompanyBlockedTimes")
+  payments           Payment[]            @relation("CompanyPayments")
+  notifications      Notification[]       @relation("CompanyNotifications")
+  settings           CompanySettings?     @relation("CompanySettings")
 
   @@map("companies")
 }
@@ -131,28 +195,30 @@ model User {
 
   company Company? @relation("CompanyUsers", fields: [companyId], references: [id], onDelete: SetNull)
 
-  organizedAppointments Appointment[]    @relation("AppointmentOrganizer")
-  orderStatusHistory    OrderStatusHistory[] @relation("OrderStatusChangedBy")
+  organizedAppointments  Appointment[]        @relation("AppointmentOrganizer")
+  orderStatusHistory     OrderStatusHistory[] @relation("OrderStatusChangedBy")
+  controlledConversations Conversation[]      @relation("ConversationController")
 
   @@map("users")
 }
 
 model ClientContact {
-  id        String   @id @default(uuid())
-  companyId String   @map("company_id")
-  firstName String   @map("first_name")
-  lastName  String   @map("last_name")
-  email     String?  @map("email")
-  phone     String?  @map("phone")
+  id        String        @id @default(uuid())
+  companyId String        @map("company_id")
+  firstName String        @map("first_name")
+  lastName  String        @map("last_name")
+  email     String?       @map("email")
+  phone     String?       @map("phone")
   source    ContactSource @map("source")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  createdAt DateTime      @default(now()) @map("created_at")
+  updatedAt DateTime      @updatedAt @map("updated_at")
 
   company Company @relation("CompanyClientContacts", fields: [companyId], references: [id], onDelete: Cascade)
 
-  orders         Order[]         @relation("ContactOrders")
-  conversations  Conversation[]  @relation("ContactConversations")
-  appointments   Appointment[]   @relation("ContactAppointments")
+  orders        Order[]        @relation("ContactOrders")
+  conversations Conversation[] @relation("ContactConversations")
+  appointments  Appointment[]  @relation("ContactAppointments")
+  payments      Payment[]      @relation("ContactPayments")
 
   @@map("client_contacts")
 }
@@ -201,15 +267,15 @@ model PlanChannel {
 }
 
 model Subscription {
-  id             String     @id @default(uuid())
-  companyId      String     @map("company_id")
-  planId         String     @map("plan_id")
-  status         SubStatus  @default(ACTIVE) @map("status")
-  initialPayment Decimal    @map("initial_payment") @db.Decimal(12, 2)
-  startedAt      DateTime   @map("started_at")
-  nextBillingAt  DateTime?  @map("next_billing_at")
-  createdAt      DateTime   @default(now()) @map("created_at")
-  updatedAt      DateTime   @updatedAt @map("updated_at")
+  id             String    @id @default(uuid())
+  companyId      String    @map("company_id")
+  planId         String    @map("plan_id")
+  status         SubStatus @default(ACTIVE) @map("status")
+  initialPayment Decimal   @map("initial_payment") @db.Decimal(12, 2)
+  startedAt      DateTime  @map("started_at")
+  nextBillingAt  DateTime? @map("next_billing_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
 
   company Company @relation("CompanySubscriptions", fields: [companyId], references: [id], onDelete: Cascade)
   plan    Plan    @relation("PlanSubscriptions", fields: [planId], references: [id], onDelete: Restrict)
@@ -244,8 +310,8 @@ model Product {
 
   company Company @relation("CompanyProducts", fields: [companyId], references: [id], onDelete: Cascade)
 
-  orders        Order[]        @relation("ProductOrders")
-  appointments  Appointment[]  @relation("ProductAppointments")
+  orders       Order[]       @relation("ProductOrders")
+  appointments Appointment[] @relation("ProductAppointments")
 
   @@map("products")
 }
@@ -266,6 +332,7 @@ model Order {
   product Product       @relation("ProductOrders", fields: [productId], references: [id], onDelete: Restrict)
 
   statusHistory OrderStatusHistory[] @relation("OrderStatusHistoryLines")
+  payments      Payment[]            @relation("OrderPayments")
 
   @@map("orders")
 }
@@ -291,6 +358,7 @@ model Appointment {
   organizerId           String            @map("organizer_id")
   contactId             String?           @map("contact_id")
   productId             String?           @map("product_id")
+  staffId               String?           @map("staff_id")
   title                 String            @map("title")
   description           String?           @map("description")
   type                  AppointmentType   @map("type")
@@ -307,28 +375,45 @@ model Appointment {
   organizer User           @relation("AppointmentOrganizer", fields: [organizerId], references: [id], onDelete: Restrict)
   contact   ClientContact? @relation("ContactAppointments", fields: [contactId], references: [id], onDelete: SetNull)
   product   Product?       @relation("ProductAppointments", fields: [productId], references: [id], onDelete: SetNull)
+  staff     Staff?         @relation("StaffAppointments", fields: [staffId], references: [id], onDelete: SetNull)
 
+  @@index([companyId, scheduledAt])
+  @@index([staffId, scheduledAt])
   @@map("appointments")
 }
 
 model Conversation {
-  id             String      @id @default(uuid())
-  companyId      String      @map("company_id")
-  contactId      String      @map("contact_id")
-  agentConfigId  String?     @map("agent_config_id")
-  channel        Channel     @map("channel")
-  status         ConvoStatus @default(OPEN) @map("status")
-  createdAt      DateTime    @default(now()) @map("created_at")
-  updatedAt      DateTime    @updatedAt @map("updated_at")
+  id                     String                      @id @default(uuid())
+  companyId              String                      @map("company_id")
+  contactId              String                      @map("contact_id")
+  agentConfigId          String?                     @map("agent_config_id")
+  controlledByUserId     String?                     @map("controlled_by_user_id")
+  channel                Channel                     @map("channel")
+  status                 ConvoStatus                 @default(OPEN) @map("status")
+  lifecycleStatus        ConversationLifecycleStatus @default(NEW) @map("lifecycle_status")
+  controlMode            ConversationControlMode     @default(AGENT) @map("control_mode")
+  controlModeChangedAt   DateTime?                   @map("control_mode_changed_at")
+  lastCustomerMessageAt  DateTime?                   @map("last_customer_message_at")
+  lastAgentMessageAt     DateTime?                   @map("last_agent_message_at")
+  createdAt              DateTime                    @default(now()) @map("created_at")
+  updatedAt              DateTime                    @updatedAt @map("updated_at")
 
-  company     Company       @relation("CompanyConversations", fields: [companyId], references: [id], onDelete: Cascade)
-  contact     ClientContact @relation("ContactConversations", fields: [contactId], references: [id], onDelete: Cascade)
-  agentConfig AgentConfig?  @relation("AgentConfigConversations", fields: [agentConfigId], references: [id], onDelete: SetNull)
+  company          Company       @relation("CompanyConversations", fields: [companyId], references: [id], onDelete: Cascade)
+  contact          ClientContact @relation("ContactConversations", fields: [contactId], references: [id], onDelete: Cascade)
+  agentConfig      AgentConfig?  @relation("AgentConfigConversations", fields: [agentConfigId], references: [id], onDelete: SetNull)
+  controlledByUser User?         @relation("ConversationController", fields: [controlledByUserId], references: [id], onDelete: SetNull)
 
-  messages  Message[]   @relation("ConversationMessages")
-  agentRuns AgentRun[]  @relation("ConversationAgentRuns")
+  messages      Message[]      @relation("ConversationMessages")
+  agentRuns     AgentRun[]     @relation("ConversationAgentRuns")
+  payments      Payment[]      @relation("ConversationPayments")
+  notifications Notification[] @relation("ConversationNotifications")
 
-  @@unique([contactId, channel])
+  // Replaces the previous hard `@@unique([contactId, channel])`. Multiple
+  // historical conversations per contact/channel are now allowed after a
+  // closure. The service layer enforces "at most one open conversation
+  // per (contactId, channel)" via a status-aware query.
+  @@index([contactId, channel, status])
+  @@index([companyId, lifecycleStatus])
   @@map("conversations")
 }
 
@@ -347,6 +432,10 @@ model Message {
 
   triggeredAgentRuns AgentRun[] @relation("MessageAgentRuns")
 
+  // Hot-path index for conversation timelines (Phase 8). Dashboards page
+  // messages by conversation + recency; an explicit index avoids the
+  // planner falling back to the PK scan + filter.
+  @@index([conversationId, sentAt(sort: Desc)])
   @@map("messages")
 }
 
@@ -355,16 +444,16 @@ model Message {
 // -----------------------------------------------------------------------------
 
 model AgentConfig {
-  id                 String   @id @default(cuid())
-  companyId          String   @map("company_id")
-  name               String   @map("name")
-  isActive           Boolean  @default(true) @map("is_active")
-  channels           Channel[] @map("channels")
-  fallbackMessage    String   @map("fallback_message")
-  escalationMessage  String   @map("escalation_message")
-  language           String   @default("es") @map("language")
-  createdAt          DateTime @default(now()) @map("created_at")
-  updatedAt          DateTime @updatedAt @map("updated_at")
+  id                String    @id @default(cuid())
+  companyId         String    @map("company_id")
+  name              String    @map("name")
+  isActive          Boolean   @default(true) @map("is_active")
+  channels          Channel[] @map("channels")
+  fallbackMessage   String    @map("fallback_message")
+  escalationMessage String    @map("escalation_message")
+  language          String    @default("es") @map("language")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
 
   company Company @relation("CompanyAgentConfigs", fields: [companyId], references: [id], onDelete: Cascade)
 
@@ -408,25 +497,317 @@ model AgentKnowledgeBase {
 }
 
 model AgentRun {
-  id               String   @id @default(cuid())
-  conversationId   String   @map("conversation_id")
-  messageId        String   @map("message_id")
-  analyzerInput    Json     @map("analyzer_input")
-  analyzerOutput   Json     @map("analyzer_output")
-  retrieverInput   Json     @map("retriever_input")
-  retrieverOutput  Json     @map("retriever_output")
-  responderInput   Json     @map("responder_input")
-  responderOutput  Json     @map("responder_output")
-  totalTokens      Int      @default(0) @map("total_tokens")
-  durationMs       Int      @default(0) @map("duration_ms")
-  success          Boolean  @default(true) @map("success")
-  error            String?  @map("error")
-  createdAt        DateTime @default(now()) @map("created_at")
+  id              String   @id @default(cuid())
+  conversationId  String   @map("conversation_id")
+  /// Unique per trigger message — Phase 8 hardening collapses any
+  /// concurrent pipeline invocations for the same inbound Message to a
+  /// single row. The second invocation receives a Prisma P2002 which
+  /// the pipeline treats as "already running; skip silently".
+  messageId       String   @unique @map("message_id")
+  analyzerInput   Json     @map("analyzer_input")
+  analyzerOutput  Json     @map("analyzer_output")
+  retrieverInput  Json     @map("retriever_input")
+  retrieverOutput Json     @map("retriever_output")
+  responderInput  Json     @map("responder_input")
+  responderOutput Json     @map("responder_output")
+  deciderInput    Json?    @map("decider_input")
+  deciderOutput   Json?    @map("decider_output")
+  executorInput   Json?    @map("executor_input")
+  executorOutput  Json?    @map("executor_output")
+  totalTokens     Int      @default(0) @map("total_tokens")
+  durationMs      Int      @default(0) @map("duration_ms")
+  success         Boolean  @default(true) @map("success")
+  error           String?  @map("error")
+  createdAt       DateTime @default(now()) @map("created_at")
 
-  conversation    Conversation @relation("ConversationAgentRuns", fields: [conversationId], references: [id], onDelete: Cascade)
-  triggerMessage  Message      @relation("MessageAgentRuns", fields: [messageId], references: [id], onDelete: Cascade)
+  conversation   Conversation @relation("ConversationAgentRuns", fields: [conversationId], references: [id], onDelete: Cascade)
+  triggerMessage Message      @relation("MessageAgentRuns", fields: [messageId], references: [id], onDelete: Cascade)
 
   generatedMessages Message[] @relation("AgentRunGeneratedMessages")
 
   @@map("agent_runs")
+}
+
+// -----------------------------------------------------------------------------
+// Phase 1 foundation: per-company channel credentials, staff, payments,
+// notifications, settings. All access tokens are stored as AES-256-GCM
+// ciphertext. See CompanyChannel.encryptedAccessToken.
+// -----------------------------------------------------------------------------
+
+model CompanyChannel {
+  id                     String   @id @default(uuid())
+  companyId              String   @map("company_id")
+  channel                Channel  @map("channel")
+  /// Provider-specific identifier that inbound webhooks carry.
+  /// For WhatsApp: phone_number_id. For Instagram: ig business account id.
+  externalId             String   @map("external_id")
+  /// Optional WhatsApp Business Account id (WABA) for reference.
+  businessAccountId      String?  @map("business_account_id")
+  /// AES-256-GCM ciphertext of the provider access token. Never stored in plaintext.
+  encryptedAccessToken   String   @map("encrypted_access_token") @db.Text
+  /// Human-readable label for operators (e.g. "Main WhatsApp line").
+  label                  String?  @map("label")
+  isActive               Boolean  @default(true) @map("is_active")
+  createdAt              DateTime @default(now()) @map("created_at")
+  updatedAt              DateTime @updatedAt @map("updated_at")
+
+  company Company @relation("CompanyChannels", fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([channel, externalId])
+  @@index([companyId, channel])
+  @@map("company_channels")
+}
+
+model Staff {
+  id        String    @id @default(uuid())
+  companyId String    @map("company_id")
+  firstName String    @map("first_name")
+  lastName  String    @map("last_name")
+  email     String?   @map("email")
+  phone     String?   @map("phone")
+  role      StaffRole @default(EMPLOYEE) @map("role")
+  isActive  Boolean   @default(true) @map("is_active")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  company Company @relation("CompanyStaff", fields: [companyId], references: [id], onDelete: Cascade)
+
+  workingHours WorkingHours[] @relation("StaffWorkingHours")
+  blockedTimes BlockedTime[]  @relation("StaffBlockedTimes")
+  appointments Appointment[]  @relation("StaffAppointments")
+
+  @@index([companyId, isActive])
+  @@map("staff")
+}
+
+model WorkingHours {
+  id        String   @id @default(uuid())
+  staffId   String   @map("staff_id")
+  /// 0 = Sunday … 6 = Saturday. Stored as int so we can index and filter.
+  dayOfWeek Int      @map("day_of_week")
+  /// Local "HH:MM" start time. Timezone lives on CompanySettings.timezone.
+  startTime String   @map("start_time")
+  endTime   String   @map("end_time")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  staff Staff @relation("StaffWorkingHours", fields: [staffId], references: [id], onDelete: Cascade)
+
+  @@unique([staffId, dayOfWeek, startTime])
+  @@map("working_hours")
+}
+
+model BlockedTime {
+  id        String   @id @default(uuid())
+  companyId String   @map("company_id")
+  staffId   String?  @map("staff_id")
+  startsAt  DateTime @map("starts_at")
+  endsAt    DateTime @map("ends_at")
+  reason    String?  @map("reason")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  company Company @relation("CompanyBlockedTimes", fields: [companyId], references: [id], onDelete: Cascade)
+  staff   Staff?  @relation("StaffBlockedTimes", fields: [staffId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, startsAt, endsAt])
+  @@index([staffId, startsAt, endsAt])
+  @@map("blocked_times")
+}
+
+model Payment {
+  id                    String        @id @default(uuid())
+  companyId             String        @map("company_id")
+  contactId             String        @map("contact_id")
+  orderId               String?       @map("order_id")
+  conversationId        String?       @map("conversation_id")
+  method                PaymentMethod @map("method")
+  status                PaymentStatus @default(INITIATED) @map("status")
+  amount                Decimal       @map("amount") @db.Decimal(12, 2)
+  currency              String        @default("USD") @map("currency")
+  /// Stripe PaymentIntent id (when method=STRIPE).
+  stripePaymentIntentId String?       @map("stripe_payment_intent_id")
+  stripeChargeId        String?       @map("stripe_charge_id")
+  /// URL of uploaded wire transfer screenshot (when method=WIRE_TRANSFER).
+  wireScreenshotUrl     String?       @map("wire_screenshot_url")
+  notes                 String?       @map("notes")
+  createdAt             DateTime      @default(now()) @map("created_at")
+  updatedAt             DateTime      @updatedAt @map("updated_at")
+
+  company      Company        @relation("CompanyPayments", fields: [companyId], references: [id], onDelete: Cascade)
+  contact      ClientContact  @relation("ContactPayments", fields: [contactId], references: [id], onDelete: Restrict)
+  order        Order?         @relation("OrderPayments", fields: [orderId], references: [id], onDelete: SetNull)
+  conversation Conversation?  @relation("ConversationPayments", fields: [conversationId], references: [id], onDelete: SetNull)
+
+  events PaymentEvent[] @relation("PaymentEvents")
+
+  @@index([companyId, status])
+  @@index([orderId])
+  @@map("payments")
+}
+
+model PaymentEvent {
+  id        String        @id @default(uuid())
+  paymentId String        @map("payment_id")
+  prevStatus PaymentStatus? @map("prev_status")
+  newStatus PaymentStatus @map("new_status")
+  reason    String?       @map("reason")
+  /// Free-form provider metadata (Stripe event id, reviewer id, etc.).
+  metadata  Json?         @map("metadata")
+  createdAt DateTime      @default(now()) @map("created_at")
+
+  payment Payment @relation("PaymentEvents", fields: [paymentId], references: [id], onDelete: Cascade)
+
+  @@index([paymentId, createdAt])
+  @@map("payment_events")
+}
+
+model Notification {
+  id             String           @id @default(uuid())
+  companyId      String           @map("company_id")
+  conversationId String?          @map("conversation_id")
+  type           NotificationType @map("type")
+  title          String           @map("title")
+  body           String           @map("body") @db.Text
+  /// Arbitrary structured payload for the frontend to render actions.
+  payload        Json?            @map("payload")
+  readAt         DateTime?        @map("read_at")
+  createdAt      DateTime         @default(now()) @map("created_at")
+  updatedAt      DateTime         @updatedAt @map("updated_at")
+
+  company      Company       @relation("CompanyNotifications", fields: [companyId], references: [id], onDelete: Cascade)
+  conversation Conversation? @relation("ConversationNotifications", fields: [conversationId], references: [id], onDelete: SetNull)
+
+  deliveries NotificationDelivery[] @relation("NotificationDeliveries")
+
+  @@index([companyId, readAt])
+  @@index([companyId, createdAt])
+  @@map("notifications")
+}
+
+// -----------------------------------------------------------------------------
+// Phase 8 — Reliability hardening
+// -----------------------------------------------------------------------------
+
+/**
+ * Dedicated dedupe choke-point for every inbound provider event.
+ *
+ * The insert uses a unique constraint on `(provider, providerEventId)`.
+ * The webhook services MUST attempt the insert BEFORE any side-effect:
+ *   - First delivery  → row created, `status = PROCESSED` after work.
+ *   - Retry delivery  → unique conflict (P2002) → webhook handler returns
+ *     immediately, guaranteeing zero duplicate writes downstream.
+ *
+ * We deliberately keep this table narrow: no payload, no metadata. The
+ * business rows (Message / PaymentEvent) remain the source of truth; this
+ * table exists solely so `IF EXISTS` checks are race-free.
+ */
+model WebhookEvent {
+  id               String              @id @default(uuid())
+  /// e.g. "meta:whatsapp", "meta:instagram", "stripe"
+  provider         String              @map("provider")
+  /// Provider-assigned event id. For Meta inbound messages: wamid / wa_id.
+  /// For Stripe: `evt_...`. Never the internal row id.
+  providerEventId  String              @map("provider_event_id")
+  /// Company scope where discoverable. Null for Stripe until reconciled.
+  companyId        String?             @map("company_id")
+  status           WebhookEventStatus  @default(RECEIVED) @map("status")
+  /// Short classification after terminal processing (e.g. "confirmed",
+  /// "duplicate", "ignored_event_type:...").
+  outcome          String?             @map("outcome")
+  firstSeenAt      DateTime            @default(now()) @map("first_seen_at")
+  processedAt      DateTime?           @map("processed_at")
+
+  @@unique([provider, providerEventId])
+  @@index([companyId, firstSeenAt])
+  @@map("webhook_events")
+}
+
+enum WebhookEventStatus {
+  RECEIVED
+  PROCESSED
+  FAILED
+}
+
+/**
+ * Dead-letter capture for any async work that has exhausted its retry
+ * budget or hit a non-retryable terminal error. Operators replay these
+ * rows via an admin endpoint; each replay inserts a new audit line on
+ * the downstream table (AgentRun, NotificationDelivery, etc.) so the
+ * replay itself is traceable.
+ */
+model FailedTask {
+  id            String            @id @default(uuid())
+  companyId     String?           @map("company_id")
+  /// Opaque discriminator — controls how the replay endpoint dispatches.
+  /// Values: "pipeline.run", "notification.delivery", "meta.send".
+  taskType      String            @map("task_type")
+  /// Fully-serialized input (JSON). Must not contain secrets; the
+  /// producer is responsible for redaction before handoff.
+  payload       Json              @map("payload")
+  /// Last recorded error message (<=2k chars). Never a stack trace.
+  lastError     String            @map("last_error") @db.Text
+  attempts      Int               @default(1) @map("attempts")
+  status        FailedTaskStatus  @default(PENDING_REPLAY) @map("status")
+  /// When status=REPLAYED, the id of the downstream row that superseded it.
+  replacedById  String?           @map("replaced_by_id")
+  createdAt     DateTime          @default(now()) @map("created_at")
+  updatedAt     DateTime          @updatedAt @map("updated_at")
+
+  @@index([status, createdAt])
+  @@index([companyId, taskType])
+  @@map("failed_tasks")
+}
+
+enum FailedTaskStatus {
+  PENDING_REPLAY
+  REPLAYED
+  ABANDONED
+}
+
+model NotificationDelivery {
+  id             String              @id @default(uuid())
+  notificationId String              @map("notification_id")
+  channel        NotificationChannel @map("channel")
+  /// Destination identifier (email address, phone number, or user id for IN_APP).
+  destination    String              @map("destination")
+  /// null = pending; set once a provider has accepted the send.
+  sentAt         DateTime?           @map("sent_at")
+  failedAt       DateTime?           @map("failed_at")
+  errorMessage   String?             @map("error_message")
+  providerRefId  String?             @map("provider_ref_id")
+  createdAt      DateTime            @default(now()) @map("created_at")
+  updatedAt      DateTime            @updatedAt @map("updated_at")
+
+  notification Notification @relation("NotificationDeliveries", fields: [notificationId], references: [id], onDelete: Cascade)
+
+  @@index([notificationId])
+  @@map("notification_deliveries")
+}
+
+model CompanySettings {
+  id                         String   @id @default(uuid())
+  companyId                  String   @unique @map("company_id")
+  /// IANA timezone, e.g. "America/Mexico_City". Used for scheduling math.
+  timezone                   String   @default("America/Mexico_City") @map("timezone")
+  defaultSlotDurationMinutes Int      @default(30) @map("default_slot_duration_minutes")
+  /// After this many hours of inactivity, the agent may auto-close the conversation.
+  inactivityCloseHours       Int      @default(48) @map("inactivity_close_hours")
+
+  // Payments
+  stripeEnabled           Boolean @default(false) @map("stripe_enabled")
+  wireTransferEnabled     Boolean @default(false) @map("wire_transfer_enabled")
+  wireTransferInstructions String? @map("wire_transfer_instructions") @db.Text
+
+  // Notifications
+  notificationEmail       String? @map("notification_email")
+  notificationWhatsapp    String? @map("notification_whatsapp")
+  inAppNotificationsEnabled Boolean @default(true) @map("in_app_notifications_enabled")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  company Company @relation("CompanySettings", fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@map("company_settings")
 }

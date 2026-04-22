@@ -2,10 +2,15 @@ import {
   Injectable,
   InternalServerErrorException,
   Logger,
+  NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios, { AxiosError, AxiosInstance } from 'axios';
+import { Channel } from '@prisma/client';
 import type { MetaConfig } from '../../config/configuration';
+import { ChannelsService } from '../channels/channels.service';
+import { RetryPolicyService } from '../../common/reliability/retry-policy.service';
+import { classifyMetaError } from '../../common/reliability/retry-classifiers';
 
 interface MetaSendResponse {
   messaging_product: string;
@@ -25,20 +30,26 @@ interface MetaApiErrorShape {
 
 /**
  * Thin wrapper around Meta's WhatsApp Cloud Graph API for outbound
- * operations. Stateless and injectable so the future AgentsModule can
- * import it without knowing anything about axios or token handling.
+ * operations. Stateless per-call: every send resolves the owning
+ * company's phone_number_id + encrypted access token from the
+ * `company_channels` table. No global access token is consulted.
+ *
+ * The API version is the only config value left — it's app-level, not
+ * tenant-level, so it stays in env.
  */
 @Injectable()
 export class MetaSenderService {
   private readonly logger = new Logger(MetaSenderService.name);
   private readonly http: AxiosInstance;
   private readonly apiVersion: string;
-  private readonly accessToken: string;
 
-  constructor(private readonly config: ConfigService) {
+  constructor(
+    private readonly config: ConfigService,
+    private readonly channels: ChannelsService,
+    private readonly retry: RetryPolicyService,
+  ) {
     const meta = this.config.getOrThrow<MetaConfig>('meta');
     this.apiVersion = meta.apiVersion;
-    this.accessToken = meta.accessToken;
 
     this.http = axios.create({
       baseURL: 'https://graph.facebook.com',
@@ -48,20 +59,28 @@ export class MetaSenderService {
   }
 
   /**
-   * Send a plain-text WhatsApp message.
-   *
-   * Failures throw — the caller (agent pipeline) is expected to handle
-   * retries / user-facing fallback. The original error is logged with
-   * enough context to debug from Railway logs alone.
+   * Send a plain-text WhatsApp message on behalf of `companyId`. The
+   * company's WhatsApp channel must be registered in `company_channels`
+   * with a valid encrypted access token. Throws if no matching channel
+   * exists — the caller (agent pipeline) decides whether to escalate or
+   * drop.
    */
-  async sendTextMessage(
-    phoneNumberId: string,
+  async sendWhatsappText(
+    companyId: string,
     recipientPhone: string,
     text: string,
   ): Promise<void> {
-    this.assertAccessToken();
+    const credentials = await this.channels.getSendingCredentials(
+      companyId,
+      Channel.WHATSAPP,
+    );
+    if (!credentials) {
+      throw new NotFoundException(
+        `No active WhatsApp channel configured for company ${companyId}`,
+      );
+    }
 
-    const url = `/${this.apiVersion}/${phoneNumberId}/messages`;
+    const url = `/${this.apiVersion}/${credentials.externalId}/messages`;
     const body = {
       messaging_product: 'whatsapp',
       recipient_type: 'individual',
@@ -71,43 +90,56 @@ export class MetaSenderService {
     };
 
     try {
-      const response = await this.http.post<MetaSendResponse>(url, body, {
-        headers: { Authorization: `Bearer ${this.accessToken}` },
-      });
+      const result = await this.retry.run(
+        {
+          operation: `meta.sendWhatsappText(company=${companyId})`,
+          maxAttempts: 3,
+          baseDelayMs: 500,
+          maxDelayMs: 4_000,
+          classify: classifyMetaError,
+        },
+        () =>
+          this.http.post<MetaSendResponse>(url, body, {
+            headers: { Authorization: `Bearer ${credentials.accessToken}` },
+          }),
+      );
 
-      const messageId = response.data.messages?.[0]?.id ?? 'unknown';
+      const messageId = result.value.data.messages?.[0]?.id ?? 'unknown';
       this.logger.log(
-        `WhatsApp text sent to ${recipientPhone} via phone_number_id=${phoneNumberId} meta_message_id=${messageId}`,
+        `WhatsApp text sent company=${companyId} to=${recipientPhone} phone_number_id=${credentials.externalId} meta_message_id=${messageId} attempts=${result.attempts}`,
       );
     } catch (error) {
       const context = this.describeError(error);
       this.logger.error(
-        `Failed to send WhatsApp text to ${recipientPhone} via ${phoneNumberId}: ${context}`,
+        `Failed to send WhatsApp text company=${companyId} to=${recipientPhone} phone_number_id=${credentials.externalId}: ${context}`,
       );
       throw new InternalServerErrorException(
-        `Meta sendTextMessage failed: ${context}`,
+        `Meta sendWhatsappText failed: ${context}`,
       );
     }
   }
 
   /**
-   * Mark an inbound message as read so the contact sees the blue ticks.
-   * Read receipts are non-critical — failures are logged but never
-   * surfaced to the caller, to avoid breaking the agent flow over a
-   * cosmetic concern.
+   * Mark an inbound WhatsApp message as read. Read receipts are
+   * non-critical — failures log at warn level and return normally so the
+   * agent flow is never blocked on a cosmetic concern.
    */
-  async markAsRead(
-    phoneNumberId: string,
+  async markWhatsappAsRead(
+    companyId: string,
     metaMessageId: string,
   ): Promise<void> {
-    if (!this.accessToken) {
+    const credentials = await this.channels.getSendingCredentials(
+      companyId,
+      Channel.WHATSAPP,
+    );
+    if (!credentials) {
       this.logger.warn(
-        'META_ACCESS_TOKEN not configured — skipping markAsRead',
+        `markWhatsappAsRead skipped: no active WhatsApp channel for company ${companyId}`,
       );
       return;
     }
 
-    const url = `/${this.apiVersion}/${phoneNumberId}/messages`;
+    const url = `/${this.apiVersion}/${credentials.externalId}/messages`;
     const body = {
       messaging_product: 'whatsapp',
       status: 'read',
@@ -116,20 +148,12 @@ export class MetaSenderService {
 
     try {
       await this.http.post(url, body, {
-        headers: { Authorization: `Bearer ${this.accessToken}` },
+        headers: { Authorization: `Bearer ${credentials.accessToken}` },
       });
     } catch (error) {
       const context = this.describeError(error);
       this.logger.warn(
-        `markAsRead failed for meta_message_id=${metaMessageId} via ${phoneNumberId}: ${context}`,
-      );
-    }
-  }
-
-  private assertAccessToken(): void {
-    if (!this.accessToken) {
-      throw new InternalServerErrorException(
-        'META_ACCESS_TOKEN is not configured',
+        `markWhatsappAsRead failed company=${companyId} meta_message_id=${metaMessageId} phone_number_id=${credentials.externalId}: ${context}`,
       );
     }
   }

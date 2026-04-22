@@ -50,6 +50,14 @@ export class CreateAppointmentDto {
   @IsOptional()
   productId?: string;
 
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description: 'Optional staff assignment (must belong to requester tenant).',
+  })
+  @IsUUID()
+  @IsOptional()
+  staffId?: string;
+
   @ApiPropertyOptional()
   @IsUrl({ require_protocol: true })
   @IsOptional()

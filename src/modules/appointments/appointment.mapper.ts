@@ -17,6 +17,9 @@ export const appointmentInclude = {
   product: {
     select: { id: true, name: true, type: true, price: true },
   },
+  staff: {
+    select: { id: true, firstName: true, lastName: true, role: true },
+  },
 } satisfies Prisma.AppointmentInclude;
 
 export type AppointmentWithRelations = Prisma.AppointmentGetPayload<{
@@ -63,6 +66,15 @@ export function toAppointmentResponse(
           name: appt.product.name,
           type: appt.product.type,
           price: appt.product.price.toString(),
+        }
+      : null,
+    staffId: appt.staffId,
+    staff: appt.staff
+      ? {
+          id: appt.staff.id,
+          firstName: appt.staff.firstName,
+          lastName: appt.staff.lastName,
+          role: appt.staff.role,
         }
       : null,
   };

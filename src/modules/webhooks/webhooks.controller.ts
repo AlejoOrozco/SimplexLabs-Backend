@@ -7,11 +7,14 @@ import {
   Post,
   Query,
   Res,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiExcludeEndpoint, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { SkipThrottle } from '@nestjs/throttler';
 import type { Response } from 'express';
 import { RawResponse } from '../../common/decorators/raw-response.decorator';
 import { WebhooksService } from './webhooks.service';
+import { MetaSignatureGuard } from './meta-signature.guard';
 
 /**
  * Meta webhook endpoints. These do NOT go through the standard
@@ -26,6 +29,10 @@ import { WebhooksService } from './webhooks.service';
  */
 @ApiTags('Webhooks')
 @Controller('webhooks')
+// Meta retries a non-2xx aggressively; any per-IP rate limit on the
+// provider's egress IPs would cause dropped deliveries. We rely on
+// signature verification + dedupe for safety instead.
+@SkipThrottle()
 export class WebhooksController {
   private readonly logger = new Logger(WebhooksController.name);
 
@@ -55,6 +62,7 @@ export class WebhooksController {
   }
 
   @Post('meta')
+  @UseGuards(MetaSignatureGuard)
   @RawResponse()
   @ApiOperation({ summary: 'Receive Meta webhook events' })
   @ApiExcludeEndpoint()

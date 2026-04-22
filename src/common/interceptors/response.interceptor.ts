@@ -8,11 +8,13 @@ import { Reflector } from '@nestjs/core';
 import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
 import { RAW_RESPONSE_KEY } from '../decorators/raw-response.decorator';
+import { getCorrelationId } from '../observability/correlation-context';
 
 export interface ApiResponse<T> {
   success: boolean;
   data: T;
   timestamp: string;
+  correlationId: string;
 }
 
 @Injectable()
@@ -40,6 +42,7 @@ export class ResponseInterceptor<T> implements NestInterceptor<
         success: true,
         data,
         timestamp: new Date().toISOString(),
+        correlationId: getCorrelationId(),
       })),
     );
   }

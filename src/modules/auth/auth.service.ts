@@ -10,6 +10,7 @@ import { createClient } from '@supabase/supabase-js';
 
 type SupabaseAdminClient = ReturnType<typeof createClient>;
 import { PrismaService } from '../../prisma/prisma.service';
+import { AgentDefaultsService } from '../agents/bootstrap/agent-defaults.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { AuthUserDto } from './dto/auth-response.dto';
@@ -48,6 +49,7 @@ export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
+    private readonly agentDefaults: AgentDefaultsService,
   ) {
     const url = this.config.get<string>('supabase.url');
     const serviceRoleKey = this.config.get<string>('supabase.serviceRoleKey');
@@ -129,6 +131,20 @@ export class AuthService {
           data: { name: dto.companyName, niche: dto.niche },
           select: { id: true },
         });
+
+        // Phase 1 bootstrap: every company gets a settings row on day one
+        // so later services (scheduling, payments, notifications) can
+        // read from a guaranteed-present record instead of null-checking.
+        // Full prompt seeding is deferred to the agents phase.
+        await tx.companySettings.create({
+          data: { companyId: company.id },
+          select: { id: true },
+        });
+
+        // Phase 2 bootstrap: seed default AgentConfig + AgentPrompts so
+        // the pipeline can run against this company from day one without
+        // any UI configuration step.
+        await this.agentDefaults.seedForCompany(company.id, { tx });
 
         return tx.user.create({
           data: {
@@ -258,6 +274,13 @@ export class AuthService {
         },
         select: { id: true },
       });
+
+      await tx.companySettings.create({
+        data: { companyId: company.id },
+        select: { id: true },
+      });
+
+      await this.agentDefaults.seedForCompany(company.id, { tx });
 
       return tx.user.create({
         data: {

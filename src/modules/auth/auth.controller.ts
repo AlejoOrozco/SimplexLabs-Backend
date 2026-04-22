@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiCookieAuth } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
+import { Throttle } from '@nestjs/throttler';
 import type { Request, Response, CookieOptions } from 'express';
 import type { CookieConfig } from '../../config/configuration';
 import { AuthService } from './auth.service';
@@ -50,6 +51,9 @@ export class AuthController {
 
   @Post('login')
   @HttpCode(HttpStatus.OK)
+  // Phase 8: aggressive per-IP throttle on credential surfaces. 10
+  // attempts / minute is generous for humans, hostile for brute-force.
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @ApiOperation({ summary: 'Login with email and password' })
   async login(
     @Body() dto: LoginDto,
@@ -62,6 +66,7 @@ export class AuthController {
 
   @Post('register')
   @HttpCode(HttpStatus.CREATED)
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @ApiOperation({ summary: 'Register new client and their company' })
   async register(
     @Body() dto: RegisterDto,

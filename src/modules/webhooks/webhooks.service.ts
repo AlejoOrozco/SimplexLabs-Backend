@@ -1,14 +1,30 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { forwardRef, Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   Channel,
   ContactSource,
+  ConversationControlMode,
+  ConversationLifecycleStatus,
   ConvoStatus,
   Prisma,
   SenderType,
 } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
-import type { MetaConfig } from '../../config/configuration';
+import { ChannelsService } from '../channels/channels.service';
+import { PipelineService } from '../agents/pipeline/pipeline.service';
+import { RealtimeService } from '../realtime/realtime.service';
+import { WebhookDedupeService } from '../../common/reliability/webhook-dedupe.service';
+import { FailedTaskService } from '../../common/reliability/failed-task.service';
+import {
+  logContext,
+  runWithExtendedContext,
+} from '../../common/observability/correlation-context';
+import {
+  conversationEventSelect,
+  messageEventSelect,
+  toConversationEventPayload,
+  toMessageEventPayload,
+} from '../realtime/realtime-payload.mapper';
 import {
   META_OBJECT,
   MetaMessage,
@@ -42,12 +58,21 @@ export class WebhooksService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
+    private readonly channels: ChannelsService,
+    @Inject(forwardRef(() => PipelineService))
+    private readonly pipeline: PipelineService,
+    private readonly realtime: RealtimeService,
+    private readonly dedupe: WebhookDedupeService,
+    private readonly failedTasks: FailedTaskService,
   ) {}
 
   /**
    * Handshake Meta runs once when subscribing a webhook. Returns the
    * challenge string when mode + token match, or `null` so the
    * controller can respond with 403.
+   *
+   * The verify token remains a single global secret because Meta uses
+   * one verify token per subscribed app — this is NOT per-tenant.
    */
   verifyWebhook(
     mode: string | undefined,
@@ -111,7 +136,7 @@ export class WebhooksService {
     channel: Channel,
     value: MetaWebhookPayload['entry'][number]['changes'][number]['value'],
   ): Promise<void> {
-    const phoneNumberId = value.metadata?.phone_number_id;
+    const externalId = value.metadata?.phone_number_id;
 
     if (value.statuses && value.statuses.length > 0) {
       for (const status of value.statuses) {
@@ -120,16 +145,26 @@ export class WebhooksService {
     }
 
     if (value.messages && value.messages.length > 0) {
-      const companyId = await this.resolveCompanyId(phoneNumberId, channel);
-      if (!companyId) {
+      if (!externalId) {
         this.logger.warn(
-          `No company mapped for phone_number_id=${phoneNumberId ?? 'unknown'} — dropping ${value.messages.length} message(s)`,
+          `Meta ${channel} change missing phone_number_id — dropping ${value.messages.length} message(s)`,
+        );
+        return;
+      }
+
+      const resolved = await this.channels.resolveCompanyByExternalId(
+        channel,
+        externalId,
+      );
+      if (!resolved) {
+        this.logger.warn(
+          `No active CompanyChannel for (channel=${channel}, externalId=${externalId}) — dropping ${value.messages.length} message(s)`,
         );
         return;
       }
 
       for (const message of value.messages) {
-        await this.handleIncomingMessage(companyId, channel, message);
+        await this.handleIncomingMessage(resolved.companyId, channel, message);
       }
     }
   }
@@ -139,6 +174,23 @@ export class WebhooksService {
     channel: Channel,
     message: MetaMessage,
   ): Promise<void> {
+    // Phase 8 idempotency choke-point. CLAIM-OR-SKIP on the dedicated
+    // `webhook_events` table: a concurrent retry loses the unique-index
+    // race and short-circuits before any business write. This replaces
+    // the previous app-level `findFirst` which had a race window.
+    const providerKey = `meta:${channel.toLowerCase()}`;
+    const claim = await this.dedupe.claim({
+      provider: providerKey,
+      providerEventId: message.id,
+      companyId,
+    });
+    if (!claim.claimed) {
+      this.logger.log(
+        `Duplicate inbound meta_id=${message.id} provider=${providerKey} — claim skipped (existing=${claim.existingId})`,
+      );
+      return;
+    }
+
     try {
       const contact = await this.findOrCreateContact(
         companyId,
@@ -153,24 +205,121 @@ export class WebhooksService {
       );
 
       const { content, metadata } = this.extractMessageBody(message);
+      // When the new conversation was opened because the previous one was
+      // CLOSED, we stamp the pointer on the FIRST inbound message so
+      // downstream phases can walk the history without a schema change.
+      const enrichedMetadata =
+        conversation.created && conversation.previousConversationId
+          ? toJsonValue({
+              ...(metadata as Record<string, unknown>),
+              previousConversationId: conversation.previousConversationId,
+            })
+          : metadata;
+      const sentAt = metaTimestampToDate(message.timestamp);
 
-      await this.prisma.message.create({
-        data: {
-          conversationId: conversation.id,
-          senderType: SenderType.CONTACT,
-          content,
-          sentAt: metaTimestampToDate(message.timestamp),
-          metadata,
-        },
-      });
+      const [createdMessage] = await this.prisma.$transaction([
+        this.prisma.message.create({
+          data: {
+            conversationId: conversation.id,
+            senderType: SenderType.CONTACT,
+            content,
+            sentAt,
+            metadata: enrichedMetadata,
+          },
+          select: messageEventSelect,
+        }),
+        this.prisma.conversation.update({
+          where: { id: conversation.id },
+          data: { lastCustomerMessageAt: sentAt },
+          select: { id: true },
+        }),
+      ]);
 
       this.logger.log(
-        `Stored inbound ${channel} message meta_id=${message.id} conversation=${conversation.id} contact=${contact.id}`,
+        `Stored inbound ${channel} message meta_id=${message.id} conversation=${conversation.id} contact=${contact.id} company=${companyId}${
+          conversation.previousConversationId
+            ? ` (reopened from closed=${conversation.previousConversationId})`
+            : ''
+        }`,
       );
+
+      // Emit realtime events AFTER the commit — order matters for the
+      // dashboard UX: conversation.created (if applicable) must land
+      // before the message.created for that conversation, so the UI can
+      // create the thread container before rendering the first bubble.
+      if (conversation.created) {
+        const fresh = await this.prisma.conversation.findUnique({
+          where: { id: conversation.id },
+          select: conversationEventSelect,
+        });
+        if (fresh) {
+          this.realtime.emitConversationCreated(toConversationEventPayload(fresh));
+        }
+      }
+      this.realtime.emitMessageCreated(toMessageEventPayload(createdMessage));
+
+      // Fire-and-forget pipeline execution. We do not await here — the
+      // controller has already ACKed, and PipelineService is itself
+      // resilient (it persists a failed AgentRun and returns normally
+      // on any internal error). The extended correlation context carries
+      // companyId / conversationId / messageId into every pipeline log.
+      const messageId = createdMessage.id;
+      void runWithExtendedContext(
+        { companyId, conversationId: conversation.id, messageId },
+        () =>
+          this.pipeline
+            .run({
+              companyId,
+              conversationId: conversation.id,
+              messageId,
+              channel,
+              inbound: {
+                content,
+                metaMessageId: message.id,
+                from: message.from,
+              },
+            })
+            .then(() => undefined)
+            .catch(async (error) => {
+              this.logger.error(
+                `Unexpected pipeline error ${logContext()} meta_id=${message.id}: ${describeError(error)}`,
+              );
+              // The pipeline normally persists AgentRun(success=false) on
+              // its own. If the error escaped the pipeline's own try/catch
+              // (e.g. provider outage pre-AgentRun), capture to DLQ so an
+              // operator can replay with the same inputs.
+              try {
+                await this.failedTasks.record({
+                  companyId,
+                  taskType: 'pipeline.run',
+                  payload: {
+                    companyId,
+                    conversationId: conversation.id,
+                    messageId,
+                    channel,
+                    inbound: {
+                      content,
+                      metaMessageId: message.id,
+                      from: message.from,
+                    },
+                  },
+                  error,
+                  attempts: 1,
+                });
+              } catch (dlqError) {
+                this.logger.error(
+                  `Failed to record pipeline failure to DLQ: ${describeError(dlqError)}`,
+                );
+              }
+            }),
+      );
+
+      await this.dedupe.markProcessed(claim.id, 'ingested');
     } catch (error) {
       this.logger.error(
-        `Failed to ingest inbound ${channel} message meta_id=${message.id} from=${message.from}: ${describeError(error)}`,
+        `Failed to ingest inbound ${channel} message ${logContext()} meta_id=${message.id} from=${message.from}: ${describeError(error)}`,
       );
+      await this.dedupe.markFailed(claim.id, describeError(error));
     }
   }
 
@@ -197,6 +346,7 @@ export class WebhooksService {
         await this.prisma.message.update({
           where: { id: existing.id },
           data: { deliveredAt: metaTimestampToDate(status.timestamp) },
+          select: { id: true },
         });
         this.logger.log(
           `Marked message ${existing.id} as delivered (meta_id=${status.id})`,
@@ -241,11 +391,27 @@ export class WebhooksService {
     return created;
   }
 
+  /**
+   * Enforce "at most one open conversation per (contactId, channel)" at
+   * the service layer now that the DB-level hard unique was removed. The
+   * non-unique composite index `(contactId, channel, status)` keeps this
+   * lookup fast while allowing multiple historical CLOSED conversations
+   * per contact on the same channel.
+   */
+  /**
+   * Returns the live conversation to attach inbound to, plus a flag
+   * describing whether we created it fresh (and if so, the id of the
+   * CLOSED predecessor for history linkage).
+   */
   private async findOrCreateOpenConversation(
     companyId: string,
     contactId: string,
     channel: Channel,
-  ): Promise<{ id: string }> {
+  ): Promise<{
+    id: string;
+    created: boolean;
+    previousConversationId: string | null;
+  }> {
     const existing = await this.prisma.conversation.findFirst({
       where: {
         companyId,
@@ -254,8 +420,24 @@ export class WebhooksService {
         status: { not: ConvoStatus.CLOSED },
       },
       select: { id: true },
+      orderBy: { createdAt: 'desc' },
     });
-    if (existing) return existing;
+    if (existing) {
+      return { id: existing.id, created: false, previousConversationId: null };
+    }
+
+    // No live thread — look for the most recent CLOSED one so we can
+    // stamp the reopen linkage on the new conversation's first message.
+    const closed = await this.prisma.conversation.findFirst({
+      where: {
+        companyId,
+        contactId,
+        channel,
+        status: ConvoStatus.CLOSED,
+      },
+      select: { id: true },
+      orderBy: { updatedAt: 'desc' },
+    });
 
     const created = await this.prisma.conversation.create({
       data: {
@@ -263,14 +445,22 @@ export class WebhooksService {
         contactId,
         channel,
         status: ConvoStatus.OPEN,
+        lifecycleStatus: ConversationLifecycleStatus.NEW,
+        controlMode: ConversationControlMode.AGENT,
       },
       select: { id: true },
     });
 
     this.logger.log(
-      `Created Conversation ${created.id} for contact=${contactId} channel=${channel}`,
+      `Created Conversation ${created.id} for contact=${contactId} channel=${channel} company=${companyId}${
+        closed ? ` (reopened from closed=${closed.id})` : ''
+      }`,
     );
-    return created;
+    return {
+      id: created.id,
+      created: true,
+      previousConversationId: closed?.id ?? null,
+    };
   }
 
   private extractMessageBody(message: MetaMessage): {
@@ -333,40 +523,6 @@ export class WebhooksService {
       content: `[${message.type} received]`,
       metadata: toJsonValue({ ...base, raw: message }),
     };
-  }
-
-  /**
-   * Map an inbound `phone_number_id` to a `companyId`. Phase 1: single
-   * tenant, resolved via the global `META_WHATSAPP_PHONE_NUMBER_ID` +
-   * the only Company row. Phase 2 (agents) will replace this with a
-   * per-tenant lookup table.
-   */
-  private async resolveCompanyId(
-    phoneNumberId: string | undefined,
-    channel: Channel,
-  ): Promise<string | null> {
-    if (channel !== Channel.WHATSAPP) {
-      const company = await this.prisma.company.findFirst({
-        select: { id: true },
-        orderBy: { createdAt: 'asc' },
-      });
-      return company?.id ?? null;
-    }
-
-    const configured =
-      this.config.get<MetaConfig>('meta')?.whatsappPhoneNumberId;
-    if (!configured || !phoneNumberId || configured !== phoneNumberId) {
-      this.logger.warn(
-        `phone_number_id=${phoneNumberId ?? 'unknown'} does not match META_WHATSAPP_PHONE_NUMBER_ID=${configured ?? 'unset'}`,
-      );
-      return null;
-    }
-
-    const company = await this.prisma.company.findFirst({
-      select: { id: true },
-      orderBy: { createdAt: 'asc' },
-    });
-    return company?.id ?? null;
   }
 
   private resolveChannel(object: string): Channel | null {
