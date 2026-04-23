@@ -152,6 +152,10 @@ export class AuthController {
       secure: sameSite === 'none' ? true : secure,
       sameSite,
       path: '/',
+      // Optional; only set when explicitly configured for cross-subdomain
+      // sessions in production. Leaving undefined keeps host-only cookies,
+      // which is safer/default for local and single-domain deployments.
+      ...(cookieConfig?.domain ? { domain: cookieConfig.domain } : {}),
     };
   }
 

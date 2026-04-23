@@ -41,6 +41,9 @@ export const configuration = () => ({
   cookie: {
     sameSite: parseSameSite(process.env.COOKIE_SAMESITE),
     secure: parseBool(process.env.COOKIE_SECURE, isProduction),
+    // Optional explicit cookie domain for cross-subdomain auth
+    // (e.g. api.simplexlabs.org issuing cookies for .simplexlabs.org).
+    domain: process.env.COOKIE_DOMAIN?.trim() || undefined,
   },
   supabase: {
     url: process.env.SUPABASE_URL ?? '',
