@@ -115,6 +115,21 @@ export class AppointmentResponseDto {
   @ApiProperty()
   updatedAt!: Date;
 
+  @ApiProperty()
+  callMeAsap!: boolean;
+
+  @ApiProperty({ type: Date, nullable: true })
+  callMeAsapRequestedAt!: Date | null;
+
+  @ApiProperty({ type: Date, nullable: true })
+  callMeAsapHandledAt!: Date | null;
+
+  @ApiProperty({ type: String, nullable: true })
+  callMeAsapHandledBy!: string | null;
+
+  @ApiProperty({ type: String, nullable: true })
+  callMeAsapHandlerNotes!: string | null;
+
   @ApiProperty({ type: AppointmentOrganizerDto })
   organizer!: AppointmentOrganizerDto;
 
@@ -129,4 +144,19 @@ export class AppointmentResponseDto {
 
   @ApiProperty({ type: AppointmentStaffSummaryDto, nullable: true })
   staff!: AppointmentStaffSummaryDto | null;
+
+  @ApiProperty()
+  isRecurring!: boolean;
+
+  @ApiProperty({ type: String, nullable: true })
+  recurrenceRule!: string | null;
+
+  @ApiProperty({ type: String, nullable: true })
+  recurrenceParentId!: string | null;
+
+  @ApiProperty({ type: Date, nullable: true })
+  recurrenceEndDate!: Date | null;
+
+  @ApiProperty({ description: 'IANA timezone stored for this appointment' })
+  creatorTimezone!: string;
 }

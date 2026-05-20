@@ -28,6 +28,9 @@ import {
   WorkingHoursResponseDto,
 } from './dto/working-hours.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { PermissionsGuard } from '../../common/guards/permissions.guard';
+import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
+import { PERM } from '../../common/auth/permission-keys';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -35,7 +38,7 @@ import type { AuthenticatedUser } from '../../common/decorators/current-user.dec
 
 @ApiTags('Staff')
 @ApiCookieAuth('access_token')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
 @Roles('SUPER_ADMIN', 'CLIENT')
 @Controller('staff')
 export class StaffController {
@@ -44,6 +47,7 @@ export class StaffController {
     private readonly workingHours: WorkingHoursService,
   ) {}
 
+  @RequirePermissions(PERM.companyStaffView)
   @Get()
   @ApiOperation({ summary: 'List staff — scoped to requester company' })
   @ApiQuery({ name: 'activeOnly', required: false, type: Boolean })
@@ -54,6 +58,7 @@ export class StaffController {
     return this.staff.findAll(user, { activeOnly: activeOnly === 'true' });
   }
 
+  @RequirePermissions(PERM.companyStaffView)
   @Get(':id')
   @ApiOperation({ summary: 'Get staff by id' })
   findOne(
@@ -63,6 +68,7 @@ export class StaffController {
     return this.staff.findOne(id, user);
   }
 
+  @RequirePermissions(PERM.companyStaffManage)
   @Post()
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Create staff member' })
@@ -73,6 +79,7 @@ export class StaffController {
     return this.staff.create(dto, user);
   }
 
+  @RequirePermissions(PERM.companyStaffManage)
   @Patch(':id')
   @ApiOperation({ summary: 'Update staff member' })
   update(
@@ -83,6 +90,7 @@ export class StaffController {
     return this.staff.update(id, dto, user);
   }
 
+  @RequirePermissions(PERM.companyStaffManage)
   @Delete(':id')
   @ApiOperation({
     summary:
@@ -97,6 +105,7 @@ export class StaffController {
 
   // ------- Working hours (nested) --------------------------------------------
 
+  @RequirePermissions(PERM.companyStaffView)
   @Get(':id/working-hours')
   @ApiOperation({ summary: "List a staff member's working hours" })
   listWorkingHours(
@@ -106,6 +115,7 @@ export class StaffController {
     return this.workingHours.list(id, user);
   }
 
+  @RequirePermissions(PERM.companyStaffManage)
   @Post(':id/working-hours')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
@@ -120,6 +130,7 @@ export class StaffController {
     return this.workingHours.create(id, dto, user);
   }
 
+  @RequirePermissions(PERM.companyStaffManage)
   @Delete(':id/working-hours/:whId')
   @ApiOperation({ summary: 'Delete a working-hours interval' })
   deleteWorkingHours(

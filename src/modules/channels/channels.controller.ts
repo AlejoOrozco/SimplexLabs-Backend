@@ -17,6 +17,9 @@ import { CreateChannelDto } from './dto/create-channel.dto';
 import { UpdateChannelDto } from './dto/update-channel.dto';
 import { ChannelResponseDto } from './dto/channel-response.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { PermissionsGuard } from '../../common/guards/permissions.guard';
+import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
+import { PERM } from '../../common/auth/permission-keys';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -32,12 +35,13 @@ import type { AuthenticatedUser } from '../../common/decorators/current-user.dec
  */
 @ApiTags('Channels')
 @ApiCookieAuth('access_token')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
 @Roles('SUPER_ADMIN', 'CLIENT')
 @Controller('channels')
 export class ChannelsController {
   constructor(private readonly channelsService: ChannelsService) {}
 
+  @RequirePermissions(PERM.companyChannelsView)
   @Get()
   @ApiOperation({ summary: 'List channels — scoped to requester company' })
   findAll(
@@ -46,6 +50,7 @@ export class ChannelsController {
     return this.channelsService.findAll(user);
   }
 
+  @RequirePermissions(PERM.companyChannelsView)
   @Get(':id')
   @ApiOperation({ summary: 'Get channel by id' })
   findOne(
@@ -55,6 +60,7 @@ export class ChannelsController {
     return this.channelsService.findOne(id, user);
   }
 
+  @RequirePermissions(PERM.companyChannelsManage)
   @Post()
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
@@ -68,6 +74,7 @@ export class ChannelsController {
     return this.channelsService.create(dto, user);
   }
 
+  @RequirePermissions(PERM.companyChannelsManage)
   @Put(':id')
   @ApiOperation({
     summary: 'Update channel metadata or rotate the access token',
@@ -80,6 +87,7 @@ export class ChannelsController {
     return this.channelsService.update(id, dto, user);
   }
 
+  @RequirePermissions(PERM.companyChannelsManage)
   @Delete(':id')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Deactivate (soft-delete) a channel' })

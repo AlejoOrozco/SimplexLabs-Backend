@@ -14,6 +14,9 @@ import {
 } from '@nestjs/common';
 import { ApiCookieAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
+import { PermissionsGuard } from '../../../common/guards/permissions.guard';
+import { RequirePermissions } from '../../../common/decorators/require-permissions.decorator';
+import { PERM } from '../../../common/auth/permission-keys';
 import { RolesGuard } from '../../../common/guards/roles.guard';
 import { Roles } from '../../../common/decorators/roles.decorator';
 import {
@@ -41,11 +44,12 @@ function assertId(raw: string): string {
 
 @ApiTags('Agent Knowledge Base')
 @ApiCookieAuth('access_token')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
 @Controller('agent-kb')
 export class AgentKbController {
   constructor(private readonly kb: AgentKbService) {}
 
+  @RequirePermissions(PERM.platformAgentsView)
   @Get()
   @Roles('SUPER_ADMIN', 'CLIENT')
   @ApiOperation({
@@ -59,6 +63,7 @@ export class AgentKbController {
     return this.kb.list(query, user);
   }
 
+  @RequirePermissions(PERM.platformAgentsView)
   @Get(':id')
   @Roles('SUPER_ADMIN', 'CLIENT')
   @ApiOperation({ summary: 'Get a KB entry by id (tenant-scoped).' })
@@ -69,6 +74,7 @@ export class AgentKbController {
     return this.kb.findOne(assertId(rawId), user);
   }
 
+  @RequirePermissions(PERM.platformAgentsManage)
   @Post()
   @HttpCode(HttpStatus.CREATED)
   @Roles('SUPER_ADMIN', 'CLIENT')
@@ -80,6 +86,7 @@ export class AgentKbController {
     return this.kb.create(dto, user);
   }
 
+  @RequirePermissions(PERM.platformAgentsManage)
   @Put(':id')
   @Roles('SUPER_ADMIN', 'CLIENT')
   @ApiOperation({
@@ -94,6 +101,7 @@ export class AgentKbController {
     return this.kb.update(assertId(rawId), dto, user);
   }
 
+  @RequirePermissions(PERM.platformAgentsManage)
   @Delete(':id')
   @HttpCode(HttpStatus.OK)
   @Roles('SUPER_ADMIN', 'CLIENT')
@@ -108,6 +116,7 @@ export class AgentKbController {
     return this.kb.softDelete(assertId(rawId), user);
   }
 
+  @RequirePermissions(PERM.platformAgentsManage)
   @Post(':id/reactivate')
   @HttpCode(HttpStatus.OK)
   @Roles('SUPER_ADMIN', 'CLIENT')

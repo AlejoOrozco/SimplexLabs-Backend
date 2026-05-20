@@ -11,10 +11,13 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiCookieAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { FailedTaskStatus, Role } from '@prisma/client';
+import { FailedTaskStatus } from '@prisma/client';
 import { IsIn, IsInt, IsOptional, IsString, MaxLength, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { PermissionsGuard } from '../../common/guards/permissions.guard';
+import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
+import { PERM } from '../../common/auth/permission-keys';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { FailedTaskService } from '../../common/reliability/failed-task.service';
@@ -23,6 +26,8 @@ import {
   DEFAULT_PAGE_LIMIT,
   resolvePagination,
 } from '../../common/http/pagination';
+import { AdminPipelineFailuresService } from './admin-pipeline-failures.service';
+import { ListAgentRunFailuresQueryDto } from './dto/list-agent-run-failures.query.dto';
 
 class ListFailedTasksQueryDto {
   @IsOptional()
@@ -63,11 +68,30 @@ class AbandonFailedTaskDto {
 @ApiTags('Admin · Reliability')
 @ApiCookieAuth('access_token')
 @Controller('admin/failed-tasks')
-@UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(Role.SUPER_ADMIN)
+@UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
+@Roles('SUPER_ADMIN')
 export class FailedTasksController {
-  constructor(private readonly failedTasks: FailedTaskService) {}
+  constructor(
+    private readonly failedTasks: FailedTaskService,
+    private readonly pipelineFailures: AdminPipelineFailuresService,
+  ) {}
 
+  @RequirePermissions(PERM.platformAdminAccess)
+  @Get('agent-runs')
+  @ApiOperation({
+    summary: 'List failed agent pipeline runs (cross-tenant)',
+    description:
+      'Returns `AgentRun` rows with `success = false` for the monitoring UI. The root `GET /admin/failed-tasks` endpoint remains the async DLQ (`FailedTask`) list.',
+  })
+  listAgentRunFailures(@Query() query: ListAgentRunFailuresQueryDto) {
+    return this.pipelineFailures.listAgentRunFailures(
+      query.page,
+      query.limit,
+      query.companyId,
+    );
+  }
+
+  @RequirePermissions(PERM.platformAdminAccess)
   @Get()
   @ApiOperation({ summary: 'List dead-letter task rows' })
   async list(@Query() query: ListFailedTasksQueryDto): Promise<{
@@ -90,12 +114,14 @@ export class FailedTasksController {
     return { items, total, limit, offset };
   }
 
+  @RequirePermissions(PERM.platformAdminAccess)
   @Get(':id')
   @ApiOperation({ summary: 'Fetch a single DLQ row with payload' })
   detail(@Param('id', new ParseUUIDPipe()) id: string) {
     return this.failedTasks.detail(id);
   }
 
+  @RequirePermissions(PERM.platformAdminAccess)
   @Post(':id/replay')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Replay the task using the registered handler' })
@@ -103,6 +129,7 @@ export class FailedTasksController {
     return this.failedTasks.replay(id);
   }
 
+  @RequirePermissions(PERM.platformAdminAccess)
   @Post(':id/abandon')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Mark as ABANDONED (irrecoverable)' })

@@ -1,5 +1,4 @@
 import { ApiProperty } from '@nestjs/swagger';
-import type { AuthenticatedUserRole } from '../../../common/decorators/current-user.decorator';
 
 export class AuthUserDto {
   @ApiProperty()
@@ -14,9 +13,15 @@ export class AuthUserDto {
   @ApiProperty()
   lastName!: string;
 
-  @ApiProperty({ enum: ['SUPER_ADMIN', 'CLIENT'] })
-  role!: AuthenticatedUserRole;
+  @ApiProperty({ description: 'Value from `roles.name`' })
+  roleName!: string;
+
+  @ApiProperty()
+  isOwner!: boolean;
 
   @ApiProperty({ nullable: true, type: String })
   companyId!: string | null;
+
+  @ApiProperty({ type: [String] })
+  permissions!: string[];
 }

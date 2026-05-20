@@ -1,4 +1,4 @@
-import { IsString, IsBoolean, IsOptional, MinLength } from 'class-validator';
+import { IsString, IsBoolean, IsOptional, MinLength, MaxLength } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class UpdateUserDto {
@@ -18,4 +18,10 @@ export class UpdateUserDto {
   @IsBoolean()
   @IsOptional()
   isActive?: boolean;
+
+  @ApiPropertyOptional({ description: 'IANA timezone, e.g. America/Bogota' })
+  @IsString()
+  @MaxLength(120)
+  @IsOptional()
+  timezone?: string;
 }

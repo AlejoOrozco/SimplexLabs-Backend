@@ -10,6 +10,9 @@ import { ApiCookieAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { IsOptional, IsUUID } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
+import { PermissionsGuard } from '../../../common/guards/permissions.guard';
+import { RequirePermissions } from '../../../common/decorators/require-permissions.decorator';
+import { PERM } from '../../../common/auth/permission-keys';
 import { RolesGuard } from '../../../common/guards/roles.guard';
 import { Roles } from '../../../common/decorators/roles.decorator';
 import {
@@ -32,11 +35,12 @@ class CompanyScopeQueryDto {
 
 @ApiTags('Agent Config')
 @ApiCookieAuth('access_token')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
 @Controller('agent-config')
 export class AgentConfigController {
   constructor(private readonly agentConfig: AgentConfigService) {}
 
+  @RequirePermissions(PERM.platformAgentsView)
   @Get()
   @Roles('SUPER_ADMIN', 'CLIENT')
   @ApiOperation({
@@ -50,6 +54,7 @@ export class AgentConfigController {
     return this.agentConfig.getActive(user, query.companyId);
   }
 
+  @RequirePermissions(PERM.platformAgentsManage)
   @Put()
   @Roles('SUPER_ADMIN', 'CLIENT')
   @ApiOperation({

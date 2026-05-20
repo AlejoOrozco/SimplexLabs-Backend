@@ -17,23 +17,28 @@ import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
 import { OrderResponseDto } from './dto/order-response.dto';
 import { OrderStatusHistoryEntryDto } from './dto/order-status-history.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { PermissionsGuard } from '../../common/guards/permissions.guard';
+import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
+import { PERM } from '../../common/auth/permission-keys';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 
 @ApiTags('Orders')
 @ApiCookieAuth('access_token')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
 @Controller('orders')
 export class OrdersController {
   constructor(private readonly ordersService: OrdersService) {}
 
+  @RequirePermissions(PERM.companyOrdersView)
   @Get()
   @ApiOperation({ summary: 'List orders — scoped to requester company' })
   findAll(@CurrentUser() user: AuthenticatedUser): Promise<OrderResponseDto[]> {
     return this.ordersService.findAll(user);
   }
 
+  @RequirePermissions(PERM.companyOrdersView)
   @Get(':id')
   @ApiOperation({ summary: 'Get order by id' })
   findOne(
@@ -43,6 +48,7 @@ export class OrdersController {
     return this.ordersService.findOne(id, user);
   }
 
+  @RequirePermissions(PERM.companyOrdersView)
   @Get(':id/history')
   @ApiOperation({ summary: 'Get full status-change history for an order' })
   findHistory(
@@ -52,6 +58,7 @@ export class OrdersController {
     return this.ordersService.findHistory(id, user);
   }
 
+  @RequirePermissions(PERM.companyOrdersManage)
   @Post()
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Create order (starts in PENDING)' })
@@ -62,6 +69,7 @@ export class OrdersController {
     return this.ordersService.create(dto, user);
   }
 
+  @RequirePermissions(PERM.companyOrdersManage)
   @Put(':id/status')
   @ApiOperation({
     summary: 'Transition order to a new status (enforces valid transitions)',

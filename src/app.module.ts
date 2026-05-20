@@ -33,6 +33,10 @@ import { PaymentsModule } from './modules/payments/payments.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { HealthModule } from './health/health.module';
 import { AdminModule } from './modules/admin/admin.module';
+import { CalendarModule } from './modules/calendar/calendar.module';
+import { PermissionsModule } from './modules/permissions/permissions.module';
+import { AttendeesModule } from './modules/attendees/attendees.module';
+import { SearchModule } from './modules/search/search.module';
 
 @Module({
   imports: [
@@ -43,9 +47,10 @@ import { AdminModule } from './modules/admin/admin.module';
     // may burst well above this during provider retries).
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
     HealthModule,
+    PrismaModule,
+    PermissionsModule,
     CommonModule,
     ReliabilityModule,
-    PrismaModule,
     AuthModule,
     UsersModule,
     CompaniesModule,
@@ -56,6 +61,7 @@ import { AdminModule } from './modules/admin/admin.module';
     ProductsModule,
     OrdersModule,
     AppointmentsModule,
+    CalendarModule,
     RealtimeModule,
     ConversationsModule,
     ChannelsModule,
@@ -66,6 +72,8 @@ import { AdminModule } from './modules/admin/admin.module';
     AgentsModule,
     WebhooksModule,
     AdminModule,
+    AttendeesModule,
+    SearchModule,
   ],
   providers: [
     {

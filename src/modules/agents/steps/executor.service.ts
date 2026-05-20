@@ -12,6 +12,7 @@ import { AvailabilityService } from '../../scheduling/availability.service';
 import { ConversationLifecycleService } from '../../conversations/conversation-lifecycle.service';
 import { PaymentsService } from '../../payments/payments.service';
 import { NotificationsService } from '../../notifications/notifications.service';
+import { PermissionsService } from '../../permissions/permissions.service';
 import type { AuthenticatedUser } from '../../../common/decorators/current-user.decorator';
 import type {
   DeciderOutput,
@@ -82,6 +83,7 @@ export class ExecutorService {
     private readonly lifecycle: ConversationLifecycleService,
     private readonly payments: PaymentsService,
     private readonly notifications: NotificationsService,
+    private readonly permissionsService: PermissionsService,
   ) {}
 
   async run(input: ExecutorStepInput): Promise<ExecutorStepResult> {
@@ -708,19 +710,53 @@ export class ExecutorService {
     // System-initiated flow — we use the company owner as the authenticated
     // caller for tenant assertion. PaymentsService receives a synthetic
     // `AuthenticatedUser` because REST auth is absent in the pipeline.
-    const owner = await this.resolveOwner(context.companyId);
-    if (!owner) {
+    const ownerId = await this.resolveOwner(context.companyId);
+    if (!ownerId) {
       return this.noPaymentResult(
         'No active owner user for company; cannot attribute payment.',
       );
     }
 
+    const ownerRow = await this.prisma.user.findUnique({
+      where: { id: ownerId },
+      select: {
+        id: true,
+        supabaseId: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        role_name: true,
+        companyId: true,
+        isActive: true,
+        is_owner: true,
+        timezone: true,
+        firstLoginCompleted: true,
+      },
+    });
+
+    if (!ownerRow) {
+      return this.noPaymentResult(
+        'Owner user record missing; cannot attribute payment.',
+      );
+    }
+
+    const permissions = await this.permissionsService.resolvePermissions(
+      ownerRow.id,
+    );
+
     const pseudoCaller: AuthenticatedUser = {
-      id: owner,
-      supabaseId: owner,
-      email: '',
-      role: 'CLIENT',
-      companyId: context.companyId,
+      id: ownerRow.id,
+      supabaseId: ownerRow.supabaseId,
+      email: ownerRow.email,
+      firstName: ownerRow.firstName,
+      lastName: ownerRow.lastName,
+      roleName: ownerRow.role_name,
+      companyId: ownerRow.companyId,
+      isActive: ownerRow.isActive,
+      isOwner: ownerRow.is_owner,
+      timezone: ownerRow.timezone,
+      firstLoginCompleted: ownerRow.firstLoginCompleted,
+      permissions,
     };
 
     try {

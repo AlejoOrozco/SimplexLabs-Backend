@@ -8,6 +8,9 @@ import {
 } from '@nestjs/common';
 import { ApiCookieAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
+import { PermissionsGuard } from '../../../common/guards/permissions.guard';
+import { RequirePermissions } from '../../../common/decorators/require-permissions.decorator';
+import { PERM } from '../../../common/auth/permission-keys';
 import { RolesGuard } from '../../../common/guards/roles.guard';
 import { Roles } from '../../../common/decorators/roles.decorator';
 import {
@@ -20,11 +23,12 @@ import { SandboxRunResponseDto } from './dto/sandbox-run-response.dto';
 
 @ApiTags('Agent Sandbox')
 @ApiCookieAuth('access_token')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
 @Controller('agent-sandbox')
 export class SandboxController {
   constructor(private readonly sandbox: SandboxService) {}
 
+  @RequirePermissions(PERM.platformAgentsManage)
   @Post('run')
   @HttpCode(HttpStatus.OK)
   @Roles('SUPER_ADMIN', 'CLIENT')

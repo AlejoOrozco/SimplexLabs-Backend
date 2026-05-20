@@ -74,7 +74,7 @@ export class AgentsService {
     requester: AuthenticatedUser,
     options: { limit?: number } = {},
   ): Promise<AgentRunResponseDto[]> {
-    if (requester.role !== 'SUPER_ADMIN') {
+    if (requester.roleName !== 'SUPER_ADMIN') {
       throw new ForbiddenException('Only SUPER_ADMIN may list failed runs');
     }
     const limit = clampLimit(options.limit);

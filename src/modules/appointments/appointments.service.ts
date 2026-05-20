@@ -8,9 +8,11 @@ import {
 } from '@nestjs/common';
 import {
   AppointmentStatus,
+  AppointmentType,
   Channel,
   ConversationLifecycleStatus,
   ConvoStatus,
+  NotificationType,
   Prisma,
   SenderType,
 } from '@prisma/client';
@@ -19,9 +21,12 @@ import { CreateAppointmentDto } from './dto/create-appointment.dto';
 import { UpdateAppointmentDto } from './dto/update-appointment.dto';
 import { AppointmentResponseDto } from './dto/appointment-response.dto';
 import { RejectAppointmentDto } from './dto/reject-appointment.dto';
+import { MarkCallbackHandledDto } from './dto/mark-callback-handled.dto';
+import { NotificationsService } from '../notifications/notifications.service';
 import type { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import {
   assertTenantAccess,
+  resolveCompanyId,
   scopedCompanyWhere,
 } from '../../common/tenant/tenant-scope';
 import {
@@ -45,6 +50,7 @@ export class AppointmentsService {
     private readonly metaSender: MetaSenderService,
     private readonly lifecycle: ConversationLifecycleService,
     private readonly realtime: RealtimeService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   async findAll(
@@ -70,12 +76,16 @@ export class AppointmentsService {
     dto: CreateAppointmentDto,
     requester: AuthenticatedUser,
   ): Promise<AppointmentResponseDto> {
-    if (!requester.companyId) {
+    const companyId =
+      requester.roleName === 'SUPER_ADMIN'
+        ? resolveCompanyId(requester, dto.companyId)
+        : requester.companyId;
+
+    if (!companyId) {
       throw new ForbiddenException(
         'Only users scoped to a company can create appointments',
       );
     }
-    const companyId = requester.companyId;
 
     await this.assertOptionalReferencesBelongToCompany(
       {
@@ -85,6 +95,16 @@ export class AppointmentsService {
       },
       companyId,
     );
+
+    const requesterTz = await this.prisma.user.findUnique({
+      where: { id: requester.id },
+      select: { timezone: true },
+    });
+
+    const creatorTimezone =
+      dto.creatorTimezone ??
+      requesterTz?.timezone ??
+      'America/Bogota';
 
     const row = await this.prisma.appointment.create({
       data: {
@@ -101,6 +121,23 @@ export class AppointmentsService {
         meetingUrl: dto.meetingUrl ?? null,
         externalAttendeeName: dto.externalAttendeeName ?? null,
         externalAttendeeEmail: dto.externalAttendeeEmail ?? null,
+        creatorTimezone,
+        ...(dto.isRecurring !== undefined
+          ? { isRecurring: dto.isRecurring }
+          : {}),
+        ...(dto.recurrenceRule !== undefined
+          ? { recurrenceRule: dto.recurrenceRule }
+          : {}),
+        ...(dto.recurrenceParentId !== undefined
+          ? { recurrenceParentId: dto.recurrenceParentId }
+          : {}),
+        ...(dto.recurrenceEndDate !== undefined
+          ? {
+              recurrenceEndDate: dto.recurrenceEndDate
+                ? new Date(dto.recurrenceEndDate)
+                : null,
+            }
+          : {}),
       },
       include: appointmentInclude,
     });
@@ -158,6 +195,25 @@ export class AppointmentsService {
         dto.staffId === null
           ? { disconnect: true }
           : { connect: { id: dto.staffId } };
+    }
+    if (dto.creatorTimezone !== undefined) {
+      data.creatorTimezone = dto.creatorTimezone;
+    }
+    if (dto.isRecurring !== undefined) {
+      data.isRecurring = dto.isRecurring;
+    }
+    if (dto.recurrenceRule !== undefined) {
+      data.recurrenceRule = dto.recurrenceRule;
+    }
+    if (dto.recurrenceParentId !== undefined) {
+      data.recurrenceParent = dto.recurrenceParentId
+        ? { connect: { id: dto.recurrenceParentId } }
+        : { disconnect: true };
+    }
+    if (dto.recurrenceEndDate !== undefined) {
+      data.recurrenceEndDate = dto.recurrenceEndDate
+        ? new Date(dto.recurrenceEndDate)
+        : null;
     }
 
     const row = await this.prisma.appointment.update({
@@ -281,6 +337,120 @@ export class AppointmentsService {
       include: appointmentInclude,
     });
     return toAppointmentResponse(refreshed);
+  }
+
+  /**
+   * Client requests a phone callback instead of confirming the proposed slot
+   * (SimplexLabs ↔ client meetings only).
+   */
+  async requestCallback(
+    id: string,
+    requester: AuthenticatedUser,
+  ): Promise<{ requested: true }> {
+    if (requester.roleName !== 'CLIENT') {
+      throw new ForbiddenException(
+        'Only client portal users can request a callback.',
+      );
+    }
+
+    const row = await this.prisma.appointment.findUnique({
+      where: { id },
+      include: {
+        company: { select: { id: true, name: true } },
+      },
+    });
+    if (!row) {
+      throw new NotFoundException(`Appointment ${id} not found`);
+    }
+    assertTenantAccess(row.companyId, requester);
+
+    if (row.type !== AppointmentType.SIMPLEX_WITH_CLIENT) {
+      throw new BadRequestException(
+        'Callbacks are only available for SimplexLabs ↔ client appointments.',
+      );
+    }
+    if (row.status !== AppointmentStatus.PENDING) {
+      throw new ConflictException(
+        'A callback can only be requested while the appointment is still pending.',
+      );
+    }
+
+    if (row.callMeAsap) {
+      return { requested: true };
+    }
+
+    await this.prisma.appointment.update({
+      where: { id },
+      data: {
+        callMeAsap: true,
+        callMeAsapRequestedAt: new Date(),
+      },
+    });
+
+    try {
+      await this.notifications.create({
+        companyId: row.companyId,
+        type: NotificationType.APPOINTMENT_CALLBACK_REQUESTED,
+        title: 'Callback requested',
+        body: `${row.company.name} requested a callback for "${row.title}".`,
+        payload: {
+          appointmentId: row.id,
+          deepLinkTab: 'appointments',
+        },
+        deliverExternal: true,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'unknown error';
+      this.logger.warn(
+        `Callback notification failed for appointment=${id}: ${message}`,
+      );
+    }
+
+    return { requested: true };
+  }
+
+  /**
+   * SimplexLabs operator marks that the client callback was completed.
+   */
+  async markCallbackHandled(
+    id: string,
+    dto: MarkCallbackHandledDto,
+    requester: AuthenticatedUser,
+  ): Promise<AppointmentResponseDto> {
+    if (requester.roleName !== 'SUPER_ADMIN') {
+      throw new ForbiddenException(
+        'Only SUPER_ADMIN may mark callbacks as handled.',
+      );
+    }
+
+    const existing = await this.prisma.appointment.findUnique({
+      where: { id },
+      include: appointmentInclude,
+    });
+    if (!existing) {
+      throw new NotFoundException(`Appointment ${id} not found`);
+    }
+    if (!existing.callMeAsapRequestedAt) {
+      throw new BadRequestException(
+        'No callback was requested for this appointment.',
+      );
+    }
+    if (existing.callMeAsapHandledAt) {
+      return toAppointmentResponse(existing);
+    }
+
+    const row = await this.prisma.appointment.update({
+      where: { id },
+      data: {
+        callMeAsapHandledAt: new Date(),
+        callMeAsapHandledBy: requester.id,
+        ...(dto.notes !== undefined
+          ? { callMeAsapHandlerNotes: dto.notes }
+          : {}),
+      },
+      include: appointmentInclude,
+    });
+    return toAppointmentResponse(row);
   }
 
   // ---------------------------------------------------------------------------

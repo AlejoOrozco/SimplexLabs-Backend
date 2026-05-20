@@ -1,5 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import {
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { PlanFeature, Prisma, SubStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateWebsiteDto } from './dto/create-website.dto';
 import { UpdateWebsiteDto } from './dto/update-website.dto';
@@ -21,9 +25,38 @@ const websiteSelect = {
   updatedAt: true,
 } satisfies Prisma.WebsiteSelect;
 
+const CHECK_LIVE_TIMEOUT_MS = 8000;
+
+export interface WebsiteLiveCheckResult {
+  isLive: boolean;
+  statusCode: number | null;
+  responseTimeMs: number | null;
+  checkedAt: string;
+}
+
 @Injectable()
 export class WebsitesService {
   constructor(private readonly prisma: PrismaService) {}
+
+  private async requestWithTimeout(
+    url: string,
+    method: 'HEAD' | 'GET',
+  ): Promise<Response> {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(
+      () => controller.abort(),
+      CHECK_LIVE_TIMEOUT_MS,
+    );
+    try {
+      return await fetch(url, {
+        method,
+        signal: controller.signal,
+        redirect: 'follow',
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
 
   async findAll(requester: AuthenticatedUser): Promise<WebsiteResponseDto[]> {
     return this.prisma.website.findMany({
@@ -53,6 +86,27 @@ export class WebsitesService {
     requester: AuthenticatedUser,
   ): Promise<WebsiteResponseDto> {
     const companyId = resolveCompanyId(requester, dto.companyId);
+
+    const hasWebsitePlan = await this.prisma.planIncludedFeature.findFirst({
+      where: {
+        feature: PlanFeature.WEBSITE,
+        plan: {
+          subscriptions: {
+            some: {
+              companyId,
+              status: SubStatus.ACTIVE,
+            },
+          },
+        },
+      },
+      select: { id: true },
+    });
+
+    if (!hasWebsitePlan) {
+      throw new ForbiddenException(
+        'This company does not have an active Website plan. Assign a Website plan before adding URLs.',
+      );
+    }
 
     try {
       return await this.prisma.website.create({
@@ -101,5 +155,33 @@ export class WebsitesService {
       select: { id: true },
     });
     return { deleted: true };
+  }
+
+  async checkLive(
+    id: string,
+    requester: AuthenticatedUser,
+  ): Promise<WebsiteLiveCheckResult> {
+    const website = await this.findOne(id, requester);
+    const checkedAt = new Date().toISOString();
+    const start = Date.now();
+    try {
+      let response = await this.requestWithTimeout(website.url, 'HEAD');
+      if (response.status === 405 || response.status === 501) {
+        response = await this.requestWithTimeout(website.url, 'GET');
+      }
+      return {
+        isLive: response.ok,
+        statusCode: response.status,
+        responseTimeMs: Date.now() - start,
+        checkedAt,
+      };
+    } catch {
+      return {
+        isLive: false,
+        statusCode: null,
+        responseTimeMs: null,
+        checkedAt,
+      };
+    }
   }
 }

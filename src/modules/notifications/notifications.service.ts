@@ -167,7 +167,7 @@ export class NotificationsService {
     const where: Prisma.NotificationWhereInput = {};
     if (scope.companyId) {
       where.companyId = scope.companyId;
-    } else if (requester.role === 'SUPER_ADMIN' && query.companyId) {
+    } else if (requester.roleName === 'SUPER_ADMIN' && query.companyId) {
       // Cross-company reads are ADMIN-only; a non-admin passing companyId
       // would have already been narrowed to their own scope above.
       where.companyId = query.companyId;
@@ -228,7 +228,7 @@ export class NotificationsService {
     // SUPER_ADMIN must explicitly call per-company to avoid accidentally
     // acknowledging every tenant's notifications at once. For a CLIENT,
     // scope enforces their companyId.
-    if (!scope.companyId && requester.role === 'SUPER_ADMIN') {
+    if (!scope.companyId && requester.roleName === 'SUPER_ADMIN') {
       throw new ForbiddenException(
         'SUPER_ADMIN mark-all-read requires an explicit companyId filter; use the per-notification endpoint instead.',
       );
@@ -411,7 +411,7 @@ export class NotificationsService {
       throw new NotFoundException('Notification not found');
     }
     if (
-      requester.role !== 'SUPER_ADMIN' &&
+      requester.roleName !== 'SUPER_ADMIN' &&
       row.companyId !== requester.companyId
     ) {
       // Same 404 shape so cross-tenant probing doesn't reveal existence.

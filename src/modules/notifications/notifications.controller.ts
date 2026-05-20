@@ -11,6 +11,9 @@ import {
 } from '@nestjs/common';
 import { ApiCookieAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { PermissionsGuard } from '../../common/guards/permissions.guard';
+import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
+import { PERM } from '../../common/auth/permission-keys';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import {
@@ -26,11 +29,12 @@ import {
 
 @ApiTags('Notifications')
 @ApiCookieAuth('access_token')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
 @Controller('notifications')
 export class NotificationsController {
   constructor(private readonly notifications: NotificationsService) {}
 
+  @RequirePermissions(PERM.companyNotificationsView)
   @Get()
   @Roles('SUPER_ADMIN', 'CLIENT')
   @ApiOperation({
@@ -44,6 +48,7 @@ export class NotificationsController {
     return this.notifications.findAll(user, query);
   }
 
+  @RequirePermissions(PERM.companyNotificationsView)
   @Get(':id')
   @Roles('SUPER_ADMIN', 'CLIENT')
   @ApiOperation({ summary: 'Get a single notification (tenant-scoped).' })
@@ -54,6 +59,7 @@ export class NotificationsController {
     return this.notifications.findOne(id, user);
   }
 
+  @RequirePermissions(PERM.companyNotificationsManage)
   @Post(':id/read')
   @HttpCode(HttpStatus.OK)
   @Roles('SUPER_ADMIN', 'CLIENT')
@@ -68,6 +74,7 @@ export class NotificationsController {
     return this.notifications.markRead(id, user);
   }
 
+  @RequirePermissions(PERM.companyNotificationsManage)
   @Post('read-all')
   @HttpCode(HttpStatus.OK)
   @Roles('CLIENT')

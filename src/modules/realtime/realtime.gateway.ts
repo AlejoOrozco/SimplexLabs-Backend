@@ -1,4 +1,4 @@
-import { Logger } from '@nestjs/common';
+import { Logger, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   OnGatewayConnection,
@@ -10,6 +10,8 @@ import { createClient } from '@supabase/supabase-js';
 import { parse as parseCookie } from 'node:querystring';
 import type { Server, Socket } from 'socket.io';
 import { PrismaService } from '../../prisma/prisma.service';
+import { PermissionsService } from '../permissions/permissions.service';
+import { ACCOUNT_DEACTIVATED } from '../../common/auth/account-deactivated';
 import type { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import { companyRoom } from './realtime-events';
 
@@ -52,6 +54,7 @@ export class RealtimeGateway
   constructor(
     private readonly config: ConfigService,
     private readonly prisma: PrismaService,
+    private readonly permissionsService: PermissionsService,
   ) {}
 
   async handleConnection(client: AuthedSocket): Promise<void> {
@@ -67,6 +70,21 @@ export class RealtimeGateway
         `Realtime connected socket=${client.id} user=${user.id} company=${user.companyId ?? 'none'}`,
       );
     } catch (error) {
+      if (error instanceof UnauthorizedException) {
+        const payload = error.getResponse();
+        if (
+          typeof payload === 'object' &&
+          payload !== null &&
+          'code' in payload &&
+          (payload as { code: unknown }).code === ACCOUNT_DEACTIVATED.code
+        ) {
+          client.emit('auth_error', {
+            code: 'account_deactivated',
+            message: ACCOUNT_DEACTIVATED.message,
+            contact: ACCOUNT_DEACTIVATED.contact,
+          });
+        }
+      }
       const message =
         error instanceof Error ? error.message : 'authentication failed';
       this.logger.warn(
@@ -108,22 +126,42 @@ export class RealtimeGateway
         id: true,
         supabaseId: true,
         email: true,
-        role: true,
+        firstName: true,
+        lastName: true,
+        role_name: true,
         companyId: true,
         isActive: true,
+        is_owner: true,
+        timezone: true,
+        firstLoginCompleted: true,
       },
     });
 
-    if (!dbUser || !dbUser.isActive) {
+    if (!dbUser) {
       throw new Error('user not found or inactive');
     }
+
+    if (!dbUser.isActive) {
+      throw new UnauthorizedException(ACCOUNT_DEACTIVATED);
+    }
+
+    const permissions = await this.permissionsService.resolvePermissions(
+      dbUser.id,
+    );
 
     return {
       id: dbUser.id,
       supabaseId: dbUser.supabaseId,
       email: dbUser.email,
-      role: dbUser.role,
+      firstName: dbUser.firstName,
+      lastName: dbUser.lastName,
+      roleName: dbUser.role_name,
       companyId: dbUser.companyId,
+      isActive: dbUser.isActive,
+      isOwner: dbUser.is_owner,
+      timezone: dbUser.timezone,
+      firstLoginCompleted: dbUser.firstLoginCompleted,
+      permissions,
     };
   }
 }

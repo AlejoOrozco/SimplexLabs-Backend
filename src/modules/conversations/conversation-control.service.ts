@@ -149,7 +149,7 @@ export class ConversationControlService {
     // This prevents teammate B from stealing control from teammate A by
     // calling `handback` + `takeover`. SUPER_ADMIN can override for ops.
     const canHandback =
-      requester.role === 'SUPER_ADMIN' ||
+      requester.roleName === 'SUPER_ADMIN' ||
       current.controlledByUserId === requester.id ||
       current.controlledByUserId === null;
     if (!canHandback) {
@@ -243,7 +243,7 @@ export class ConversationControlService {
     }
     if (
       convo.controlledByUserId !== requester.id &&
-      requester.role !== 'SUPER_ADMIN'
+      requester.roleName !== 'SUPER_ADMIN'
     ) {
       throw new ConflictException({
         code: 'CONTROL_CONFLICT',

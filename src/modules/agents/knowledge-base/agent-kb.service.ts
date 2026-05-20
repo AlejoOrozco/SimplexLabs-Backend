@@ -64,7 +64,7 @@ export class AgentKbService {
       ...scopedCompanyWhere(requester),
     };
 
-    if (requester.role === 'SUPER_ADMIN' && query.companyId) {
+    if (requester.roleName === 'SUPER_ADMIN' && query.companyId) {
       where.companyId = query.companyId;
     }
 

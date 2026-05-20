@@ -16,17 +16,21 @@ import { CreateClientContactDto } from './dto/create-client-contact.dto';
 import { UpdateClientContactDto } from './dto/update-client-contact.dto';
 import { ClientContactResponseDto } from './dto/client-contact-response.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { PermissionsGuard } from '../../common/guards/permissions.guard';
+import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
+import { PERM } from '../../common/auth/permission-keys';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 
 @ApiTags('ClientContacts')
 @ApiCookieAuth('access_token')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
 @Controller('client-contacts')
 export class ClientContactsController {
   constructor(private readonly clientContactsService: ClientContactsService) {}
 
+  @RequirePermissions(PERM.companyClientContactsView)
   @Get()
   @ApiOperation({ summary: 'List contacts — scoped to requester company' })
   findAll(
@@ -35,6 +39,7 @@ export class ClientContactsController {
     return this.clientContactsService.findAll(user);
   }
 
+  @RequirePermissions(PERM.companyClientContactsView)
   @Get(':id')
   @ApiOperation({ summary: 'Get contact by id' })
   findOne(
@@ -44,6 +49,7 @@ export class ClientContactsController {
     return this.clientContactsService.findOne(id, user);
   }
 
+  @RequirePermissions(PERM.companyClientContactsManage)
   @Post()
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Create contact' })
@@ -54,6 +60,7 @@ export class ClientContactsController {
     return this.clientContactsService.create(dto, user);
   }
 
+  @RequirePermissions(PERM.companyClientContactsManage)
   @Put(':id')
   @ApiOperation({ summary: 'Update contact' })
   update(

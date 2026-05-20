@@ -112,7 +112,7 @@ export class PaymentsService {
     dto: InitiatePaymentDto,
     requester: AuthenticatedUser,
   ): Promise<PaymentResponseDto> {
-    if (!requester.companyId && requester.role !== 'SUPER_ADMIN') {
+    if (!requester.companyId && requester.roleName !== 'SUPER_ADMIN') {
       throw new ForbiddenException('Only tenant users can initiate payments');
     }
 

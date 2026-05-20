@@ -1,4 +1,5 @@
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import { isSuperAdmin } from '../auth/user-role.util';
 import type { AuthenticatedUser } from '../decorators/current-user.decorator';
 
 /**
@@ -18,7 +19,7 @@ export interface TenantScope {
  * A `CLIENT` without a companyId is rejected with `ForbiddenException`.
  */
 export function scopedCompanyWhere(requester: AuthenticatedUser): TenantScope {
-  if (requester.role === 'SUPER_ADMIN') return {};
+  if (isSuperAdmin(requester)) return {};
   if (!requester.companyId) {
     throw new ForbiddenException('Requester has no company scope');
   }
@@ -33,7 +34,7 @@ export function assertTenantAccess(
   targetCompanyId: string,
   requester: AuthenticatedUser,
 ): void {
-  if (requester.role === 'SUPER_ADMIN') return;
+  if (isSuperAdmin(requester)) return;
   if (targetCompanyId !== requester.companyId) {
     throw new ForbiddenException('Access denied');
   }
@@ -48,7 +49,7 @@ export function resolveCompanyId(
   requester: AuthenticatedUser,
   providedCompanyId: string | undefined,
 ): string {
-  if (requester.role === 'SUPER_ADMIN') {
+  if (isSuperAdmin(requester)) {
     if (!providedCompanyId) {
       throw new BadRequestException(
         'companyId is required when creating as SUPER_ADMIN',

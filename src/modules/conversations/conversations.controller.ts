@@ -14,6 +14,9 @@ import { ApiCookieAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ConversationsService } from './conversations.service';
 import { ConversationControlService } from './conversation-control.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { PermissionsGuard } from '../../common/guards/permissions.guard';
+import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
+import { PERM } from '../../common/auth/permission-keys';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -29,7 +32,7 @@ import { SendHumanMessageDto } from './dto/send-human-message.dto';
 
 @ApiTags('Conversations')
 @ApiCookieAuth('access_token')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
 @Controller('conversations')
 export class ConversationsController {
   constructor(
@@ -37,6 +40,7 @@ export class ConversationsController {
     private readonly controlService: ConversationControlService,
   ) {}
 
+  @RequirePermissions(PERM.companyConversationsView)
   @Get()
   @ApiOperation({
     summary: 'List conversations — scoped to requester company',
@@ -48,6 +52,7 @@ export class ConversationsController {
     return this.conversationsService.findAll(user, query);
   }
 
+  @RequirePermissions(PERM.companyConversationsView)
   @Get(':id')
   @ApiOperation({ summary: 'Get conversation with full message thread' })
   findOne(
@@ -57,6 +62,7 @@ export class ConversationsController {
     return this.conversationsService.findOne(id, user);
   }
 
+  @RequirePermissions(PERM.companyConversationsView)
   @Get(':id/messages')
   @ApiOperation({ summary: 'Get messages for a conversation' })
   getMessages(
@@ -66,6 +72,7 @@ export class ConversationsController {
     return this.conversationsService.getMessages(id, user);
   }
 
+  @RequirePermissions(PERM.companyConversationsManage)
   @Post(':id/takeover')
   @Roles('SUPER_ADMIN', 'CLIENT')
   @HttpCode(HttpStatus.OK)
@@ -79,6 +86,7 @@ export class ConversationsController {
     return this.controlService.takeover(id, user);
   }
 
+  @RequirePermissions(PERM.companyConversationsManage)
   @Post(':id/handback')
   @Roles('SUPER_ADMIN', 'CLIENT')
   @HttpCode(HttpStatus.OK)
@@ -92,6 +100,7 @@ export class ConversationsController {
     return this.controlService.handback(id, user);
   }
 
+  @RequirePermissions(PERM.companyConversationsManage)
   @Post(':id/messages')
   @Roles('SUPER_ADMIN', 'CLIENT')
   @HttpCode(HttpStatus.CREATED)

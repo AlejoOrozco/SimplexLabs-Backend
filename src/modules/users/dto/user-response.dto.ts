@@ -1,5 +1,4 @@
 import { ApiProperty } from '@nestjs/swagger';
-import type { AuthenticatedUserRole } from '../../../common/decorators/current-user.decorator';
 
 export class UserResponseDto {
   @ApiProperty()
@@ -14,15 +13,21 @@ export class UserResponseDto {
   @ApiProperty()
   lastName!: string;
 
-  @ApiProperty({ enum: ['SUPER_ADMIN', 'CLIENT'] })
-  role!: AuthenticatedUserRole;
+  @ApiProperty({ description: 'Value from `roles.name`' })
+  roleName!: string;
 
   @ApiProperty()
   isActive!: boolean;
+
+  @ApiProperty()
+  firstLoginCompleted!: boolean;
 
   @ApiProperty({ type: String, nullable: true })
   companyId!: string | null;
 
   @ApiProperty()
   createdAt!: Date;
+
+  @ApiProperty({ description: 'IANA timezone for calendar display' })
+  timezone!: string;
 }

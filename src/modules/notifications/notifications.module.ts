@@ -32,7 +32,7 @@ import { InactivityCloseJob } from './scheduler/inactivity-close.job';
     WhatsappNotificationAdapter,
     InactivityCloseJob,
   ],
-  exports: [NotificationsService],
+  exports: [NotificationsService, EmailService],
 })
 export class NotificationsModule implements OnModuleInit {
   constructor(private readonly inactivity: InactivityCloseJob) {}

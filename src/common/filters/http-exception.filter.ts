@@ -25,6 +25,7 @@ import { getCorrelationId } from '../observability/correlation-context';
  *   payload_too_large      → body-size cap hit (413)
  *   bad_request            → all other 400s (malformed pagination, etc.)
  *   illegal_state          → lifecycle transition refused
+ *   account_deactivated    → user exists but is inactive (401)
  *   internal               → anything non-HttpException — intentionally opaque
  */
 export type ApiErrorCode =
@@ -37,6 +38,7 @@ export type ApiErrorCode =
   | 'payload_too_large'
   | 'bad_request'
   | 'illegal_state'
+  | 'account_deactivated'
   | 'internal';
 
 interface ApiErrorBody {
@@ -47,6 +49,7 @@ interface ApiErrorBody {
   readonly path: string;
   readonly timestamp: string;
   readonly correlationId: string;
+  readonly contact?: string;
 }
 
 @Catch()
@@ -64,10 +67,12 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     let message: string | string[] = 'Internal server error';
     let error = 'Internal Server Error';
     let code: ApiErrorCode = 'internal';
+    let contact: string | undefined;
 
     if (exception instanceof HttpException) {
       status = exception.getStatus();
       const exceptionResponse = exception.getResponse();
+      let res: Record<string, unknown> | undefined;
 
       if (typeof exceptionResponse === 'string') {
         message = exceptionResponse;
@@ -75,11 +80,14 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         typeof exceptionResponse === 'object' &&
         exceptionResponse !== null
       ) {
-        const res = exceptionResponse as Record<string, unknown>;
+        res = exceptionResponse as Record<string, unknown>;
         message = (res.message as string | string[]) ?? message;
         error = (res.error as string) ?? error;
+        if (typeof res.contact === 'string') {
+          contact = res.contact;
+        }
       }
-      code = mapStatusToCode(status, message);
+      code = resolveApiCode(status, message, res);
     } else if (exception instanceof Error) {
       // Never leak internal error messages/stacks in production responses;
       // they're logged server-side where operators can correlate by id.
@@ -97,10 +105,23 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       path: request.url,
       timestamp: new Date().toISOString(),
       correlationId: getCorrelationId(),
+      ...(contact !== undefined ? { contact } : {}),
     };
 
     response.status(status).json(body);
   }
+}
+
+function resolveApiCode(
+  status: number,
+  message: string | string[],
+  res?: Record<string, unknown>,
+): ApiErrorCode {
+  const raw = res?.code;
+  if (raw === 'ACCOUNT_DEACTIVATED' || raw === 'account_deactivated') {
+    return 'account_deactivated';
+  }
+  return mapStatusToCode(status, message);
 }
 
 function mapStatusToCode(

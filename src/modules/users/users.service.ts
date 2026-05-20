@@ -3,30 +3,34 @@ import {
   NotFoundException,
   ForbiddenException,
   ConflictException,
+  BadRequestException,
   InternalServerErrorException,
   Logger,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
-import { createClient } from '@supabase/supabase-js';
+import type { SupabaseAdminClient } from '../../common/supabase/supabase-admin.service';
+import { SupabaseAdminService } from '../../common/supabase/supabase-admin.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UserResponseDto } from './dto/user-response.dto';
 import type { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
-
-type SupabaseAdminClient = ReturnType<typeof createClient>;
+import { isSuperAdmin } from '../../common/auth/user-role.util';
 
 const userSelect = {
   id: true,
   email: true,
   firstName: true,
   lastName: true,
-  role: true,
+  role_name: true,
   isActive: true,
+  firstLoginCompleted: true,
   companyId: true,
+  timezone: true,
   createdAt: true,
 } satisfies Prisma.UserSelect;
+
+type UserRow = Prisma.UserGetPayload<{ select: typeof userSelect }>;
 
 @Injectable()
 export class UsersService {
@@ -35,33 +39,26 @@ export class UsersService {
 
   constructor(
     private readonly prisma: PrismaService,
-    config: ConfigService,
+    supabaseAdmin: SupabaseAdminService,
   ) {
-    const url = config.get<string>('supabase.url');
-    const serviceRoleKey = config.get<string>('supabase.serviceRoleKey');
-    if (!url || !serviceRoleKey) {
-      throw new Error(
-        'Supabase is not configured. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.',
-      );
-    }
-    this.supabase = createClient(url, serviceRoleKey);
+    this.supabase = supabaseAdmin.getClient();
   }
 
   async findAll(requester: AuthenticatedUser): Promise<UserResponseDto[]> {
-    const where: Prisma.UserWhereInput =
-      requester.role === 'SUPER_ADMIN'
-        ? {}
-        : { companyId: requester.companyId };
+    const where: Prisma.UserWhereInput = isSuperAdmin(requester)
+      ? {}
+      : { companyId: requester.companyId };
 
-    if (requester.role !== 'SUPER_ADMIN' && !requester.companyId) {
+    if (!isSuperAdmin(requester) && !requester.companyId) {
       throw new ForbiddenException('Requester has no company scope');
     }
 
-    return this.prisma.user.findMany({
+    const rows = await this.prisma.user.findMany({
       where,
       select: userSelect,
       orderBy: { createdAt: 'desc' },
     });
+    return rows.map((row) => this.toUserResponse(row));
   }
 
   async findOne(
@@ -78,7 +75,7 @@ export class UsersService {
     }
 
     this.assertAccess(user.companyId, requester);
-    return user;
+    return this.toUserResponse(user);
   }
 
   async create(
@@ -95,8 +92,16 @@ export class UsersService {
       throw new ConflictException('Email already in use');
     }
 
-    if (dto.role === 'CLIENT' && !dto.companyId) {
+    if (dto.roleName === 'CLIENT' && !dto.companyId) {
       throw new ForbiddenException('CLIENT users require a companyId');
+    }
+
+    const roleRow = await this.prisma.roles.findUnique({
+      where: { name: dto.roleName },
+      select: { name: true },
+    });
+    if (!roleRow) {
+      throw new BadRequestException(`Unknown role: ${dto.roleName}`);
     }
 
     const { data: created, error: createErr } =
@@ -117,17 +122,18 @@ export class UsersService {
     const supabaseUserId = created.user.id;
 
     try {
-      return await this.prisma.user.create({
+      const created = await this.prisma.user.create({
         data: {
           supabaseId: supabaseUserId,
           email: dto.email,
           firstName: dto.firstName,
           lastName: dto.lastName,
-          role: dto.role,
+          role_name: dto.roleName,
           companyId: dto.companyId ?? null,
         },
         select: userSelect,
       });
+      return this.toUserResponse(created);
     } catch (err) {
       await this.safeDeleteSupabaseUser(supabaseUserId);
       throw err;
@@ -141,11 +147,12 @@ export class UsersService {
   ): Promise<UserResponseDto> {
     await this.findOne(id, requester);
 
-    return this.prisma.user.update({
+    const updated = await this.prisma.user.update({
       where: { id },
       data: dto,
       select: userSelect,
     });
+    return this.toUserResponse(updated);
   }
 
   async remove(
@@ -178,18 +185,42 @@ export class UsersService {
     }
   }
 
+  async completeFirstLogin(userId: string): Promise<UserResponseDto> {
+    const updated = await this.prisma.user.update({
+      where: { id: userId },
+      data: { firstLoginCompleted: true },
+      select: userSelect,
+    });
+    return this.toUserResponse(updated);
+  }
+
+  private toUserResponse(row: UserRow): UserResponseDto {
+    return {
+      id: row.id,
+      email: row.email,
+      firstName: row.firstName,
+      lastName: row.lastName,
+      roleName: row.role_name,
+      isActive: row.isActive,
+      firstLoginCompleted: row.firstLoginCompleted,
+      companyId: row.companyId,
+      timezone: row.timezone,
+      createdAt: row.createdAt,
+    };
+  }
+
   private assertAccess(
     targetCompanyId: string | null,
     requester: AuthenticatedUser,
   ): void {
-    if (requester.role === 'SUPER_ADMIN') return;
+    if (isSuperAdmin(requester)) return;
     if (targetCompanyId !== requester.companyId) {
       throw new ForbiddenException('Access denied');
     }
   }
 
   private assertSuperAdmin(requester: AuthenticatedUser, action: string): void {
-    if (requester.role !== 'SUPER_ADMIN') {
+    if (!isSuperAdmin(requester)) {
       throw new ForbiddenException(`Only SUPER_ADMIN can ${action}`);
     }
   }

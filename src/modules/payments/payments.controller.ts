@@ -11,6 +11,9 @@ import {
 } from '@nestjs/common';
 import { ApiCookieAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { PermissionsGuard } from '../../common/guards/permissions.guard';
+import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
+import { PERM } from '../../common/auth/permission-keys';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -23,11 +26,12 @@ import { PaymentResponseDto } from './dto/payment-response.dto';
 
 @ApiTags('Payments')
 @ApiCookieAuth('access_token')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
 @Controller('payments')
 export class PaymentsController {
   constructor(private readonly payments: PaymentsService) {}
 
+  @RequirePermissions(PERM.companyPaymentsView)
   @Get()
   @Roles('SUPER_ADMIN', 'CLIENT')
   @ApiOperation({ summary: 'List payments scoped to requester company.' })
@@ -37,6 +41,7 @@ export class PaymentsController {
     return this.payments.findAll(user);
   }
 
+  @RequirePermissions(PERM.companyPaymentsView)
   @Get(':id')
   @Roles('SUPER_ADMIN', 'CLIENT')
   @ApiOperation({ summary: 'Get payment detail + event log.' })
@@ -47,6 +52,7 @@ export class PaymentsController {
     return this.payments.findOne(id, user);
   }
 
+  @RequirePermissions(PERM.companyPaymentsManage)
   @Post('initiate')
   @Roles('SUPER_ADMIN', 'CLIENT')
   @HttpCode(HttpStatus.CREATED)
@@ -61,6 +67,7 @@ export class PaymentsController {
     return this.payments.initiate(dto, user);
   }
 
+  @RequirePermissions(PERM.companyPaymentsManage)
   @Post(':id/wire/screenshot')
   @Roles('SUPER_ADMIN', 'CLIENT')
   @ApiOperation({
@@ -75,6 +82,7 @@ export class PaymentsController {
     return this.payments.attachWireScreenshot(id, dto, user);
   }
 
+  @RequirePermissions(PERM.companyPaymentsManage)
   @Post(':id/wire/review')
   @Roles('SUPER_ADMIN', 'CLIENT')
   @ApiOperation({

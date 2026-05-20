@@ -5,6 +5,17 @@ import { PipelineService } from '../agents/pipeline/pipeline.service';
 import { FailedTaskService } from '../../common/reliability/failed-task.service';
 import { FailedTasksController } from './failed-tasks.controller';
 import type { PipelineContext } from '../agents/pipeline/pipeline-types';
+import { NotificationsModule } from '../notifications/notifications.module';
+import { CuidParamPipe } from '../../common/pipes/cuid-param.pipe';
+import { AdminService } from './admin.service';
+import { AdminOnboardingController } from './admin-onboarding.controller';
+import { AdminCompaniesController } from './admin-companies.controller';
+import { AdminClientUsersController } from './admin-client-users.controller';
+import { AdminDashboardController } from './dashboard/admin-dashboard.controller';
+import { AdminDashboardService } from './dashboard/admin-dashboard.service';
+import { AdminClientDetailService } from './dashboard/admin-client-detail.service';
+import { AdminPipelineFailuresService } from './admin-pipeline-failures.service';
+import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
 
 /**
  * Admin module (Phase 8).
@@ -18,8 +29,21 @@ import type { PipelineContext } from '../agents/pipeline/pipeline-types';
  * feature-agnostic.
  */
 @Module({
-  imports: [AgentsModule],
-  controllers: [FailedTasksController],
+  imports: [AgentsModule, NotificationsModule, SubscriptionsModule],
+  controllers: [
+    FailedTasksController,
+    AdminOnboardingController,
+    AdminCompaniesController,
+    AdminClientUsersController,
+    AdminDashboardController,
+  ],
+  providers: [
+    AdminService,
+    AdminDashboardService,
+    AdminClientDetailService,
+    AdminPipelineFailuresService,
+    CuidParamPipe,
+  ],
 })
 export class AdminModule implements OnModuleInit {
   constructor(

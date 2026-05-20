@@ -1,5 +1,11 @@
-import { ApiProperty } from '@nestjs/swagger';
-import type { Niche, PlanFeature, Channel } from '@prisma/client';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import type {
+  Niche,
+  PlanFeature,
+  Channel,
+  PlanCategory,
+  PlanTier,
+} from '@prisma/client';
 
 export class PlanResponseDto {
   @ApiProperty()
@@ -11,11 +17,28 @@ export class PlanResponseDto {
   @ApiProperty({ enum: ['GYM', 'MEDICAL', 'ENTREPRENEUR'] })
   niche!: Niche;
 
+  @ApiPropertyOptional({ enum: ['MARKETING', 'WEBSITE', 'AI_AGENTS'] })
+  category?: PlanCategory | null;
+
+  @ApiPropertyOptional({ enum: ['BASIC', 'PROFESSIONAL', 'ENTERPRISE'] })
+  tier?: PlanTier | null;
+
   @ApiProperty({ description: 'Decimal serialized as string, e.g. "99.00"' })
   priceMonthly!: string;
 
+  @ApiPropertyOptional({
+    description: 'Annual price when set, as decimal string',
+  })
+  priceAnnual?: string | null;
+
   @ApiProperty({ description: 'Decimal serialized as string, e.g. "199.00"' })
   setupFee!: string;
+
+  @ApiPropertyOptional()
+  maxCampaigns?: number | null;
+
+  @ApiPropertyOptional()
+  description?: string | null;
 
   @ApiProperty()
   isActive!: boolean;

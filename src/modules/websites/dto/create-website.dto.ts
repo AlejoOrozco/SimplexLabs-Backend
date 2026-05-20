@@ -9,11 +9,11 @@ import {
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateWebsiteDto {
-  @ApiProperty({ example: 'https://example.com' })
+  @ApiProperty({ example: 'https://juanitosshoes.com' })
   @IsUrl({ require_protocol: true })
   url!: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ example: 'Main store website' })
   @IsString()
   @MinLength(1)
   @IsOptional()
@@ -25,7 +25,9 @@ export class CreateWebsiteDto {
   isActive?: boolean;
 
   /** Required when the caller is SUPER_ADMIN; ignored when the caller is a CLIENT. */
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({
+    description: 'Required when called by SUPER_ADMIN',
+  })
   @IsUUID()
   @IsOptional()
   companyId?: string;

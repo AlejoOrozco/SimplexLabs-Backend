@@ -5,10 +5,12 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { createClient } from '@supabase/supabase-js';
 import type { Request } from 'express';
 import { PrismaService } from '../../prisma/prisma.service';
+import { PermissionsService } from '../../modules/permissions/permissions.service';
+import { SupabaseAdminService } from '../supabase/supabase-admin.service';
 import type { AuthenticatedUser } from '../decorators/current-user.decorator';
+import { ACCOUNT_DEACTIVATED } from '../auth/account-deactivated';
 import { getCookieValue } from '../http/cookie.util';
 
 @Injectable()
@@ -16,6 +18,8 @@ export class JwtAuthGuard implements CanActivate {
   constructor(
     private readonly config: ConfigService,
     private readonly prisma: PrismaService,
+    private readonly permissionsService: PermissionsService,
+    private readonly supabaseAdmin: SupabaseAdminService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -32,9 +36,9 @@ export class JwtAuthGuard implements CanActivate {
       throw new UnauthorizedException('Authentication is not configured');
     }
 
-    const supabase = createClient(supabaseUrl, serviceRoleKey);
-
-    const { data, error } = await supabase.auth.getUser(token);
+    const { data, error } = await this.supabaseAdmin
+      .getClient()
+      .auth.getUser(token);
 
     if (error || !data.user) {
       throw new UnauthorizedException('Invalid or expired token');
@@ -46,22 +50,42 @@ export class JwtAuthGuard implements CanActivate {
         id: true,
         supabaseId: true,
         email: true,
-        role: true,
+        firstName: true,
+        lastName: true,
+        role_name: true,
         companyId: true,
         isActive: true,
+        is_owner: true,
+        timezone: true,
+        firstLoginCompleted: true,
       },
     });
 
-    if (!dbUser || !dbUser.isActive) {
+    if (!dbUser) {
       throw new UnauthorizedException('User not found or inactive');
     }
+
+    if (!dbUser.isActive) {
+      throw new UnauthorizedException(ACCOUNT_DEACTIVATED);
+    }
+
+    const permissions = await this.permissionsService.resolvePermissions(
+      dbUser.id,
+    );
 
     const authenticated: AuthenticatedUser = {
       id: dbUser.id,
       supabaseId: dbUser.supabaseId,
       email: dbUser.email,
-      role: dbUser.role,
+      firstName: dbUser.firstName,
+      lastName: dbUser.lastName,
+      roleName: dbUser.role_name,
       companyId: dbUser.companyId,
+      isActive: dbUser.isActive,
+      isOwner: dbUser.is_owner,
+      timezone: dbUser.timezone,
+      firstLoginCompleted: dbUser.firstLoginCompleted,
+      permissions,
     };
     request.user = authenticated;
     return true;

@@ -6,15 +6,16 @@ import {
   Logger,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { createClient } from '@supabase/supabase-js';
-
-type SupabaseAdminClient = ReturnType<typeof createClient>;
+import type { SupabaseAdminClient } from '../../common/supabase/supabase-admin.service';
+import { SupabaseAdminService } from '../../common/supabase/supabase-admin.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AgentDefaultsService } from '../agents/bootstrap/agent-defaults.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { AuthUserDto } from './dto/auth-response.dto';
-import type { AuthenticatedUserRole } from '../../common/decorators/current-user.decorator';
+import { MeResponseDto } from './dto/me-response.dto';
+import { ACCOUNT_DEACTIVATED } from '../../common/auth/account-deactivated';
+import { PermissionsService } from '../permissions/permissions.service';
 
 interface AuthTokens {
   accessToken: string;
@@ -31,8 +32,9 @@ interface PersistedUser {
   email: string;
   firstName: string;
   lastName: string;
-  role: AuthenticatedUserRole;
+  role_name: string;
   companyId: string | null;
+  is_owner: boolean;
 }
 
 function safeString(source: unknown, key: string): string | undefined {
@@ -50,15 +52,10 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     private readonly agentDefaults: AgentDefaultsService,
+    private readonly permissionsService: PermissionsService,
+    supabaseAdmin: SupabaseAdminService,
   ) {
-    const url = this.config.get<string>('supabase.url');
-    const serviceRoleKey = this.config.get<string>('supabase.serviceRoleKey');
-    if (!url || !serviceRoleKey) {
-      throw new Error(
-        'Supabase is not configured. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.',
-      );
-    }
-    this.supabase = createClient(url, serviceRoleKey);
+    this.supabase = supabaseAdmin.getClient();
   }
 
   async login(dto: LoginDto): Promise<AuthResult> {
@@ -78,18 +75,38 @@ export class AuthService {
         email: true,
         firstName: true,
         lastName: true,
-        role: true,
+        role_name: true,
         companyId: true,
         isActive: true,
+        is_owner: true,
       },
     });
 
-    if (!dbUser || !dbUser.isActive) {
+    if (!dbUser) {
       throw new UnauthorizedException('Account not found or inactive');
     }
 
+    if (!dbUser.isActive) {
+      throw new UnauthorizedException(ACCOUNT_DEACTIVATED);
+    }
+
+    const permissions = await this.permissionsService.resolvePermissions(
+      dbUser.id,
+    );
+
     return {
-      user: this.toAuthUser(dbUser),
+      user: this.toAuthUser(
+        {
+          id: dbUser.id,
+          email: dbUser.email,
+          firstName: dbUser.firstName,
+          lastName: dbUser.lastName,
+          role_name: dbUser.role_name,
+          companyId: dbUser.companyId,
+          is_owner: dbUser.is_owner,
+        },
+        permissions,
+      ),
       tokens: {
         accessToken: data.session.access_token,
         refreshToken: data.session.refresh_token,
@@ -152,7 +169,7 @@ export class AuthService {
             email: dto.email,
             firstName: dto.firstName,
             lastName: dto.lastName,
-            role: 'CLIENT',
+            role_name: 'CLIENT',
             companyId: company.id,
           },
           select: {
@@ -160,8 +177,9 @@ export class AuthService {
             email: true,
             firstName: true,
             lastName: true,
-            role: true,
+            role_name: true,
             companyId: true,
+            is_owner: true,
           },
         });
       });
@@ -187,8 +205,12 @@ export class AuthService {
       );
     }
 
+    const permissions = await this.permissionsService.resolvePermissions(
+      dbUser.id,
+    );
+
     return {
-      user: this.toAuthUser(dbUser),
+      user: this.toAuthUser(dbUser, permissions),
       tokens: {
         accessToken: sessionData.session.access_token,
         refreshToken: sessionData.session.refresh_token,
@@ -242,18 +264,33 @@ export class AuthService {
         email: true,
         firstName: true,
         lastName: true,
-        role: true,
+        role_name: true,
         companyId: true,
         isActive: true,
+        is_owner: true,
       },
     });
 
     if (existing) {
       if (!existing.isActive) {
-        throw new UnauthorizedException('Account is inactive');
+        throw new UnauthorizedException(ACCOUNT_DEACTIVATED);
       }
+      const permissions = await this.permissionsService.resolvePermissions(
+        existing.id,
+      );
       return {
-        user: this.toAuthUser(existing),
+        user: this.toAuthUser(
+          {
+            id: existing.id,
+            email: existing.email,
+            firstName: existing.firstName,
+            lastName: existing.lastName,
+            role_name: existing.role_name,
+            companyId: existing.companyId,
+            is_owner: existing.is_owner,
+          },
+          permissions,
+        ),
         tokens: { accessToken },
       };
     }
@@ -288,7 +325,7 @@ export class AuthService {
           email,
           firstName,
           lastName,
-          role: 'CLIENT',
+          role_name: 'CLIENT',
           companyId: company.id,
         },
         select: {
@@ -296,26 +333,86 @@ export class AuthService {
           email: true,
           firstName: true,
           lastName: true,
-          role: true,
+          role_name: true,
           companyId: true,
+          is_owner: true,
         },
       });
     });
 
+    const permissions = await this.permissionsService.resolvePermissions(
+      created.id,
+    );
+
     return {
-      user: this.toAuthUser(created),
+      user: this.toAuthUser(created, permissions),
       tokens: { accessToken },
     };
   }
 
-  private toAuthUser(user: PersistedUser): AuthUserDto {
+  async getMe(userId: string): Promise<MeResponseDto> {
+    const [user, permissions] = await Promise.all([
+      this.prisma.user.findUniqueOrThrow({
+        where: { id: userId },
+        select: {
+          id: true,
+          supabaseId: true,
+          email: true,
+          firstName: true,
+          lastName: true,
+          role_name: true,
+          is_owner: true,
+          companyId: true,
+          isActive: true,
+          timezone: true,
+          firstLoginCompleted: true,
+          company: {
+            select: {
+              id: true,
+              name: true,
+              niche: true,
+              is_platform_owner: true,
+            },
+          },
+        },
+      }),
+      this.permissionsService.resolvePermissions(userId),
+    ]);
+
+    return {
+      id: user.id,
+      supabaseId: user.supabaseId,
+      email: user.email,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      roleName: user.role_name,
+      isOwner: user.is_owner,
+      companyId: user.companyId,
+      isActive: user.isActive,
+      timezone: user.timezone,
+      firstLoginCompleted: user.firstLoginCompleted,
+      company: user.company
+        ? {
+            id: user.company.id,
+            name: user.company.name,
+            niche: user.company.niche,
+            isPlatformOwner: user.company.is_platform_owner,
+          }
+        : null,
+      permissions,
+    };
+  }
+
+  private toAuthUser(user: PersistedUser, permissions: string[]): AuthUserDto {
     return {
       id: user.id,
       email: user.email,
       firstName: user.firstName,
       lastName: user.lastName,
-      role: user.role,
+      roleName: user.role_name,
+      isOwner: user.is_owner,
       companyId: user.companyId,
+      permissions,
     };
   }
 

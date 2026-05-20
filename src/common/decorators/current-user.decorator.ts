@@ -5,15 +5,21 @@ import {
 } from '@nestjs/common';
 import type { Request } from 'express';
 
-/** Matches Prisma `Role` in `schema.prisma` — keep aligned when the enum changes. */
-export type AuthenticatedUserRole = 'SUPER_ADMIN' | 'CLIENT';
-
 export interface AuthenticatedUser {
   id: string;
   supabaseId: string;
   email: string;
-  role: AuthenticatedUserRole;
+  firstName: string;
+  lastName: string;
+  /** FK to `roles.name` — source of truth for RBAC. */
+  roleName: string;
   companyId: string | null;
+  isActive: boolean;
+  isOwner: boolean;
+  timezone: string;
+  firstLoginCompleted: boolean;
+  /** Resolved keys from `PermissionsService.resolvePermissions`. */
+  permissions: string[];
 }
 
 export const CurrentUser = createParamDecorator(

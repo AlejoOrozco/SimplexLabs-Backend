@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Niche, PlanCategory, PlanTier, Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreatePlanDto } from './dto/create-plan.dto';
 import { UpdatePlanDto } from './dto/update-plan.dto';
@@ -11,15 +11,46 @@ function uniqueValues<T>(values: T[] | undefined): T[] {
   return Array.from(new Set(values));
 }
 
+export interface PlansListFilters {
+  readonly category?: PlanCategory;
+  readonly niche?: Niche;
+  readonly tier?: PlanTier;
+}
+
 @Injectable()
 export class PlansService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findAll(): Promise<PlanResponseDto[]> {
+  async findAll(filters?: PlansListFilters): Promise<PlanResponseDto[]> {
     const plans = await this.prisma.plan.findMany({
-      where: { isActive: true },
+      where: {
+        isActive: true,
+        ...(filters?.category !== undefined && { category: filters.category }),
+        ...(filters?.niche !== undefined && { niche: filters.niche }),
+        ...(filters?.tier !== undefined && { tier: filters.tier }),
+      },
       include: planInclude,
-      orderBy: [{ niche: 'asc' }, { priceMonthly: 'asc' }],
+      orderBy: [
+        { niche: 'asc' },
+        { category: 'asc' },
+        { tier: 'asc' },
+      ],
+    });
+    return plans.map(toPlanResponse);
+  }
+
+  async findByCategory(
+    category: PlanCategory,
+    niche?: Niche,
+  ): Promise<PlanResponseDto[]> {
+    const plans = await this.prisma.plan.findMany({
+      where: {
+        category,
+        isActive: true,
+        ...(niche !== undefined && { niche }),
+      },
+      include: planInclude,
+      orderBy: { tier: 'asc' },
     });
     return plans.map(toPlanResponse);
   }
@@ -37,8 +68,13 @@ export class PlansService {
       data: {
         name: dto.name,
         niche: dto.niche,
+        category: dto.category,
+        tier: dto.tier,
         priceMonthly: dto.priceMonthly,
+        priceAnnual: dto.priceAnnual,
         setupFee: dto.setupFee,
+        maxCampaigns: dto.maxCampaigns,
+        description: dto.description,
         includedFeatures: features.length
           ? { create: features.map((feature) => ({ feature })) }
           : undefined,

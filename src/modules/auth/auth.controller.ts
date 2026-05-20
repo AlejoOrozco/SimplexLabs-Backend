@@ -19,7 +19,13 @@ import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { AuthUserDto } from './dto/auth-response.dto';
+import { MeResponseDto } from './dto/me-response.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { PermissionsGuard } from '../../common/guards/permissions.guard';
+import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
+import { PERM } from '../../common/auth/permission-keys';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import { getCookieValue } from '../../common/http/cookie.util';
@@ -66,8 +72,15 @@ export class AuthController {
 
   @Post('register')
   @HttpCode(HttpStatus.CREATED)
+  @UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
+  @RequirePermissions(PERM.platformAdminAccess)
+  @Roles('SUPER_ADMIN')
+  @ApiCookieAuth('access_token')
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
-  @ApiOperation({ summary: 'Register new client and their company' })
+  @ApiOperation({
+    summary:
+      'Register new client and company (SUPER_ADMIN only; prefer POST /admin/companies/create-full then POST /admin/users/create-client)',
+  })
   async register(
     @Body() dto: RegisterDto,
     @Res({ passthrough: true }) res: Response,
@@ -116,8 +129,8 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @ApiCookieAuth('access_token')
   @ApiOperation({ summary: 'Get current authenticated user' })
-  me(@CurrentUser() user: AuthenticatedUser): AuthenticatedUser {
-    return user;
+  async me(@CurrentUser() user: AuthenticatedUser): Promise<MeResponseDto> {
+    return this.authService.getMe(user.id);
   }
 
   @Get('oauth/google')

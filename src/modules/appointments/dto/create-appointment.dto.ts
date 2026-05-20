@@ -1,4 +1,5 @@
 import {
+  IsBoolean,
   IsDateString,
   IsEmail,
   IsEnum,
@@ -58,6 +59,15 @@ export class CreateAppointmentDto {
   @IsOptional()
   staffId?: string;
 
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      'Required when the caller is SUPER_ADMIN — the client company this appointment belongs to (e.g. SimplexLabs ↔ client `SIMPLEX_WITH_CLIENT`).',
+  })
+  @IsUUID()
+  @IsOptional()
+  companyId?: string;
+
   @ApiPropertyOptional()
   @IsUrl({ require_protocol: true })
   @IsOptional()
@@ -73,4 +83,34 @@ export class CreateAppointmentDto {
   @IsEmail()
   @IsOptional()
   externalAttendeeEmail?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Optional override; otherwise set from the creator user timezone on create.',
+  })
+  @IsString()
+  @MaxLength(120)
+  @IsOptional()
+  creatorTimezone?: string;
+
+  @ApiPropertyOptional()
+  @IsBoolean()
+  @IsOptional()
+  isRecurring?: boolean;
+
+  @ApiPropertyOptional({ description: 'RRULE string when part of a series' })
+  @IsString()
+  @MaxLength(2000)
+  @IsOptional()
+  recurrenceRule?: string;
+
+  @ApiPropertyOptional({ format: 'uuid' })
+  @IsUUID()
+  @IsOptional()
+  recurrenceParentId?: string;
+
+  @ApiPropertyOptional({ description: 'Series end (UTC)' })
+  @IsDateString()
+  @IsOptional()
+  recurrenceEndDate?: string;
 }

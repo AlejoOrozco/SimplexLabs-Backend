@@ -46,6 +46,11 @@ export function toAppointmentResponse(
     externalAttendeeEmail: appt.externalAttendeeEmail,
     createdAt: appt.createdAt,
     updatedAt: appt.updatedAt,
+    callMeAsap: appt.callMeAsap,
+    callMeAsapRequestedAt: appt.callMeAsapRequestedAt,
+    callMeAsapHandledAt: appt.callMeAsapHandledAt,
+    callMeAsapHandledBy: appt.callMeAsapHandledBy,
+    callMeAsapHandlerNotes: appt.callMeAsapHandlerNotes,
     organizer: {
       id: appt.organizer.id,
       firstName: appt.organizer.firstName,
@@ -77,5 +82,10 @@ export function toAppointmentResponse(
           role: appt.staff.role,
         }
       : null,
+    isRecurring: appt.isRecurring,
+    recurrenceRule: appt.recurrenceRule,
+    recurrenceParentId: appt.recurrenceParentId,
+    recurrenceEndDate: appt.recurrenceEndDate,
+    creatorTimezone: appt.creatorTimezone,
   };
 }

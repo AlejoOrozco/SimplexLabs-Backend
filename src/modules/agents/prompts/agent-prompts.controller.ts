@@ -13,6 +13,9 @@ import { IsOptional, IsUUID } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { AgentRole } from '@prisma/client';
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
+import { PermissionsGuard } from '../../../common/guards/permissions.guard';
+import { RequirePermissions } from '../../../common/decorators/require-permissions.decorator';
+import { PERM } from '../../../common/auth/permission-keys';
 import { RolesGuard } from '../../../common/guards/roles.guard';
 import { Roles } from '../../../common/decorators/roles.decorator';
 import {
@@ -34,11 +37,12 @@ const VALID_ROLES = new Set<AgentRole>(Object.values(AgentRole));
 
 @ApiTags('Agent Prompts')
 @ApiCookieAuth('access_token')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
 @Controller('agent-prompts')
 export class AgentPromptsController {
   constructor(private readonly agentPrompts: AgentPromptsService) {}
 
+  @RequirePermissions(PERM.platformAgentsView)
   @Get()
   @Roles('SUPER_ADMIN', 'CLIENT')
   @ApiOperation({
@@ -52,6 +56,7 @@ export class AgentPromptsController {
     return this.agentPrompts.listForCompany(user, query.companyId);
   }
 
+  @RequirePermissions(PERM.platformAgentsManage)
   @Put(':role')
   @Roles('SUPER_ADMIN', 'CLIENT')
   @ApiOperation({

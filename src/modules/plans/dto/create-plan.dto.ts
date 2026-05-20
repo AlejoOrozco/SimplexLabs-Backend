@@ -6,9 +6,17 @@ import {
   IsArray,
   MinLength,
   Min,
+  IsInt,
+  MaxLength,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Niche, PlanFeature, Channel } from '@prisma/client';
+import {
+  Niche,
+  PlanFeature,
+  Channel,
+  PlanCategory,
+  PlanTier,
+} from '@prisma/client';
 
 export class CreatePlanDto {
   @ApiProperty()
@@ -20,15 +28,43 @@ export class CreatePlanDto {
   @IsEnum(Niche)
   niche!: Niche;
 
+  @ApiPropertyOptional({ enum: PlanCategory })
+  @IsEnum(PlanCategory)
+  @IsOptional()
+  category?: PlanCategory;
+
+  @ApiPropertyOptional({ enum: PlanTier })
+  @IsEnum(PlanTier)
+  @IsOptional()
+  tier?: PlanTier;
+
   @ApiProperty()
   @IsNumber()
   @Min(0)
   priceMonthly!: number;
 
+  @ApiPropertyOptional()
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  priceAnnual?: number;
+
   @ApiProperty()
   @IsNumber()
   @Min(0)
   setupFee!: number;
+
+  @ApiPropertyOptional()
+  @IsInt()
+  @Min(0)
+  @IsOptional()
+  maxCampaigns?: number;
+
+  @ApiPropertyOptional()
+  @IsString()
+  @MaxLength(2000)
+  @IsOptional()
+  description?: string;
 
   @ApiPropertyOptional({ enum: PlanFeature, isArray: true })
   @IsArray()
