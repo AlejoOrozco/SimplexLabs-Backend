@@ -18,7 +18,11 @@ model Company {
   deactivatedAt       DateTime?
   deactivationReason  String?
   firstLoginCompleted Boolean              @default(false)
-  is_platform_owner   Boolean              @default(false)
+  is_platform_owner        Boolean              @default(false)
+  dialogApiKey             String?              @map("dialog_api_key")
+  dialogBaseUrl            String?              @map("dialog_base_url")
+  whatsappPhoneNumber      String?              @map("whatsapp_phone_number")
+  whatsappPhoneNumberId    String?              @map("whatsapp_phone_number_id")
   agentConfigs        AgentConfig[]        @relation("CompanyAgentConfigs")
   agentKnowledgeBase  AgentKnowledgeBase[] @relation("CompanyAgentKnowledgeBase")
   appointments        Appointment[]        @relation("CompanyAppointments")

@@ -10,11 +10,12 @@ import {
   SenderType,
 } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
-import { ChannelsService } from '../channels/channels.service';
 import { PipelineService } from '../agents/pipeline/pipeline.service';
 import { RealtimeService } from '../realtime/realtime.service';
 import { WebhookDedupeService } from '../../common/reliability/webhook-dedupe.service';
 import { FailedTaskService } from '../../common/reliability/failed-task.service';
+import { MetaSenderService } from './meta-sender.service';
+import type { DialogConfig } from '../../config/configuration';
 import {
   logContext,
   runWithExtendedContext,
@@ -58,12 +59,12 @@ export class WebhooksService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
-    private readonly channels: ChannelsService,
     @Inject(forwardRef(() => PipelineService))
     private readonly pipeline: PipelineService,
     private readonly realtime: RealtimeService,
     private readonly dedupe: WebhookDedupeService,
     private readonly failedTasks: FailedTaskService,
+    private readonly metaSenderService: MetaSenderService,
   ) {}
 
   /**
@@ -152,19 +153,16 @@ export class WebhooksService {
         return;
       }
 
-      const resolved = await this.channels.resolveCompanyByExternalId(
-        channel,
-        externalId,
-      );
-      if (!resolved) {
+      const company = await this.resolveCompanyByPhoneNumberId(externalId);
+      if (!company) {
         this.logger.warn(
-          `No active CompanyChannel for (channel=${channel}, externalId=${externalId}) — dropping ${value.messages.length} message(s)`,
+          `No company mapped for phone_number_id=${externalId} — dropping ${value.messages.length} message(s)`,
         );
         return;
       }
 
       for (const message of value.messages) {
-        await this.handleIncomingMessage(resolved.companyId, channel, message);
+        await this.handleIncomingMessage(company.id, channel, message);
       }
     }
   }
@@ -257,6 +255,17 @@ export class WebhooksService {
         }
       }
       this.realtime.emitMessageCreated(toMessageEventPayload(createdMessage));
+
+      if (this.config.get<string>('nodeEnv') !== 'production') {
+        await this.sendTestEchoResponse(
+          companyId,
+          message.from,
+          content,
+          conversation.id,
+        );
+        await this.dedupe.markProcessed(claim.id, 'test_echo');
+        return;
+      }
 
       // Fire-and-forget pipeline execution. We do not await here — the
       // controller has already ACKed, and PipelineService is itself
@@ -523,6 +532,70 @@ export class WebhooksService {
       content: `[${message.type} received]`,
       metadata: toJsonValue({ ...base, raw: message }),
     };
+  }
+
+  private async resolveCompanyByPhoneNumberId(
+    phoneNumberId: string,
+  ): Promise<{ id: string } | null> {
+    const dialog = this.config.get<DialogConfig>('dialog');
+    const sandboxNumber = dialog?.sandboxNumber ?? '+551146733492';
+    const isSandboxMatch =
+      phoneNumberId === 'sandbox' || phoneNumberId === sandboxNumber;
+
+    return this.prisma.company.findFirst({
+      where: {
+        OR: [
+          { whatsappPhoneNumberId: phoneNumberId },
+          { whatsappPhoneNumber: phoneNumberId },
+          ...(isSandboxMatch ? [{ is_platform_owner: true }] : []),
+        ],
+      },
+      select: { id: true },
+    });
+  }
+
+  /**
+   * Temporary echo for non-production — verifies inbound storage + 360dialog
+   * outbound + inbox visibility. Replaced by the agent pipeline in production.
+   */
+  private async sendTestEchoResponse(
+    companyId: string,
+    recipientPhone: string,
+    incomingMessage: string,
+    conversationId: string,
+  ): Promise<void> {
+    try {
+      const echoText = `[TEST MODE] Received: "${incomingMessage}" — SimplexLabs agent pipeline will respond here.`;
+
+      const sentMessageId = await this.metaSenderService.sendTextMessage({
+        companyId,
+        recipientPhone,
+        text: echoText,
+      });
+
+      const outbound = await this.prisma.message.create({
+        data: {
+          conversationId,
+          senderType: SenderType.AGENT,
+          content: echoText,
+          sentAt: new Date(),
+          metadata: sentMessageId
+            ? toJsonValue({ metaMessageId: sentMessageId, source: 'test_echo' })
+            : toJsonValue({ source: 'test_echo' }),
+        },
+        select: messageEventSelect,
+      });
+
+      this.realtime.emitMessageCreated(toMessageEventPayload(outbound));
+
+      this.logger.log(
+        `Echo response sent to ${recipientPhone} for conversation ${conversationId}`,
+      );
+    } catch (error) {
+      this.logger.error(
+        `Failed to send echo response: ${describeError(error)}`,
+      );
+    }
   }
 
   private resolveChannel(object: string): Channel | null {

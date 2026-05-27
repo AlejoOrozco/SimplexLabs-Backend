@@ -61,6 +61,24 @@ export const configuration = () => ({
     appSecret: process.env.META_APP_SECRET ?? '',
     apiVersion: process.env.META_API_VERSION ?? 'v19.0',
   },
+  dialog: {
+    sandboxApiKey: process.env.DIALOG_SANDBOX_API_KEY ?? '',
+    sandboxBaseUrl:
+      process.env.DIALOG_SANDBOX_BASE_URL ?? 'https://waba-sandbox.360dialog.io',
+    sandboxNumber: process.env.DIALOG_SANDBOX_NUMBER ?? '+551146733492',
+    /** When true, inbound sandbox messages get an echo reply and skip the agent pipeline. */
+    sandboxEchoEnabled: parseBool(process.env.DIALOG_SANDBOX_ECHO_ENABLED, false),
+    /**
+     * When true, unmatched WhatsApp `phone_number_id` values route to the
+     * platform-owner sandbox channel (externalId `sandbox`).
+     */
+    sandboxInboundFallback: parseBool(
+      process.env.DIALOG_SANDBOX_INBOUND_FALLBACK,
+      true,
+    ),
+    /** CompanyChannel.externalId used for 360dialog sandbox webhook routing. */
+    sandboxExternalId: process.env.DIALOG_SANDBOX_EXTERNAL_ID ?? 'sandbox',
+  },
   security: {
     encryptionKey: process.env.ENCRYPTION_KEY ?? '',
   },
@@ -136,6 +154,7 @@ export const configuration = () => ({
 export type AppConfig = ReturnType<typeof configuration>;
 export type CookieConfig = AppConfig['cookie'];
 export type MetaConfig = AppConfig['meta'];
+export type DialogConfig = AppConfig['dialog'];
 export type SecurityConfig = AppConfig['security'];
 export type AgentsConfig = AppConfig['agents'];
 export type EmailConfig = AppConfig['email'];

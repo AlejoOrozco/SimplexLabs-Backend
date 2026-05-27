@@ -13,6 +13,8 @@ import {
   scopedCompanyWhere,
 } from '../../common/tenant/tenant-scope';
 import type { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
+import { ConfigService } from '@nestjs/config';
+import type { DialogConfig } from '../../config/configuration';
 import { CreateChannelDto } from './dto/create-channel.dto';
 import { UpdateChannelDto } from './dto/update-channel.dto';
 import { ChannelResponseDto } from './dto/channel-response.dto';
@@ -54,6 +56,7 @@ export class ChannelsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly encryption: EncryptionService,
+    private readonly config: ConfigService,
   ) {}
 
   async findAll(requester: AuthenticatedUser): Promise<ChannelResponseDto[]> {
@@ -197,8 +200,44 @@ export class ChannelsService {
       where: { channel_externalId: { channel, externalId } },
       select: { id: true, companyId: true, isActive: true },
     });
-    if (!row || !row.isActive) return null;
-    return { companyId: row.companyId, channelId: row.id };
+    if (row?.isActive) {
+      return { companyId: row.companyId, channelId: row.id };
+    }
+
+    return this.resolveDialogSandboxFallback(channel, externalId);
+  }
+
+  /**
+   * 360dialog sandbox webhooks may carry a `phone_number_id` that does not
+   * match our seeded `sandbox` external id. When fallback is enabled, route
+   * any unmatched WhatsApp inbound to the sandbox channel row.
+   */
+  private async resolveDialogSandboxFallback(
+    channel: Channel,
+    externalId: string,
+  ): Promise<{ companyId: string; channelId: string } | null> {
+    if (channel !== Channel.WHATSAPP) return null;
+
+    const dialog = this.config.get<DialogConfig>('dialog');
+    if (!dialog?.sandboxInboundFallback) return null;
+
+    const sandboxExternalId = dialog.sandboxExternalId;
+    if (externalId === sandboxExternalId) {
+      return null;
+    }
+
+    const sandbox = await this.prisma.companyChannel.findUnique({
+      where: {
+        channel_externalId: { channel, externalId: sandboxExternalId },
+      },
+      select: { id: true, companyId: true, isActive: true },
+    });
+    if (!sandbox?.isActive) return null;
+
+    this.logger.log(
+      `Routing WhatsApp inbound externalId=${externalId} → sandbox channel company=${sandbox.companyId}`,
+    );
+    return { companyId: sandbox.companyId, channelId: sandbox.id };
   }
 
   /**
