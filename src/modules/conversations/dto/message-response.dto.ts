@@ -8,7 +8,7 @@ export class MessageResponseDto {
   @ApiProperty()
   conversationId!: string;
 
-  @ApiProperty({ enum: ['AGENT', 'CONTACT'] })
+  @ApiProperty({ enum: ['AGENT', 'CONTACT', 'HUMAN'] })
   senderType!: SenderType;
 
   @ApiProperty()

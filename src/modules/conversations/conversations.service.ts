@@ -15,6 +15,7 @@ import { MessageResponseDto } from './dto/message-response.dto';
 import {
   detailConversationInclude,
   listConversationInclude,
+  messageListSelect,
   toConversationDetail,
   toConversationListItem,
   toMessageResponse,
@@ -66,6 +67,7 @@ export class ConversationsService {
     const rows = await this.prisma.message.findMany({
       where: { conversationId: id },
       orderBy: { sentAt: 'asc' },
+      select: messageListSelect,
     });
     return rows.map(toMessageResponse);
   }

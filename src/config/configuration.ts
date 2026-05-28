@@ -78,6 +78,14 @@ export const configuration = () => ({
     ),
     /** CompanyChannel.externalId used for 360dialog sandbox webhook routing. */
     sandboxExternalId: process.env.DIALOG_SANDBOX_EXTERNAL_ID ?? 'sandbox',
+    /**
+     * 360dialog sandbox webhooks often omit Meta's `X-Hub-Signature-256`.
+     * Set to `true` for sandbox; keep `false` in production Meta Cloud setups.
+     */
+    webhookSkipSignature: parseBool(
+      process.env.DIALOG_WEBHOOK_SKIP_SIGNATURE,
+      false,
+    ),
   },
   security: {
     encryptionKey: process.env.ENCRYPTION_KEY ?? '',

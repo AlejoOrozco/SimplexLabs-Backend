@@ -9,7 +9,7 @@ import { ConfigService } from '@nestjs/config';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { RawBodyRequest } from '@nestjs/common';
 import type { Request } from 'express';
-import type { MetaConfig } from '../../config/configuration';
+import type { DialogConfig, MetaConfig } from '../../config/configuration';
 
 const SIGNATURE_HEADER = 'x-hub-signature-256';
 const SIGNATURE_PREFIX = 'sha256=';
@@ -43,6 +43,13 @@ export class MetaSignatureGuard implements CanActivate {
     const header = Array.isArray(headerRaw) ? headerRaw[0] : headerRaw;
 
     if (!header || typeof header !== 'string') {
+      const dialog = this.config.get<DialogConfig>('dialog');
+      if (dialog?.webhookSkipSignature) {
+        this.logger.warn(
+          'Missing X-Hub-Signature-256 — allowed because DIALOG_WEBHOOK_SKIP_SIGNATURE=true (360dialog sandbox)',
+        );
+        return true;
+      }
       this.logger.warn('Missing X-Hub-Signature-256 header on Meta webhook');
       throw new UnauthorizedException('Missing webhook signature');
     }

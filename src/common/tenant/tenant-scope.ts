@@ -15,11 +15,17 @@ export interface TenantScope {
 
 /**
  * Returns a Prisma `where` fragment that scopes a query to the requester's company.
- * `SUPER_ADMIN` gets `{}` (cross-tenant read).
+ * `SUPER_ADMIN` without `companyId` gets `{}` (cross-tenant read on admin APIs).
+ * `SUPER_ADMIN` with `companyId` is scoped to that company (inbox, etc.).
  * A `CLIENT` without a companyId is rejected with `ForbiddenException`.
  */
 export function scopedCompanyWhere(requester: AuthenticatedUser): TenantScope {
-  if (isSuperAdmin(requester)) return {};
+  if (isSuperAdmin(requester)) {
+    if (requester.companyId) {
+      return { companyId: requester.companyId };
+    }
+    return {};
+  }
   if (!requester.companyId) {
     throw new ForbiddenException('Requester has no company scope');
   }
@@ -34,7 +40,12 @@ export function assertTenantAccess(
   targetCompanyId: string,
   requester: AuthenticatedUser,
 ): void {
-  if (isSuperAdmin(requester)) return;
+  if (isSuperAdmin(requester)) {
+    if (requester.companyId && targetCompanyId !== requester.companyId) {
+      throw new ForbiddenException('Access denied');
+    }
+    return;
+  }
   if (targetCompanyId !== requester.companyId) {
     throw new ForbiddenException('Access denied');
   }

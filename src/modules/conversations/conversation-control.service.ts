@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
@@ -233,15 +234,16 @@ export class ConversationControlService {
     }
     assertTenantAccess(convo.companyId, requester);
 
-    if (convo.controlMode !== ConversationControlMode.HUMAN) {
-      throw new ConflictException({
-        code: 'NOT_IN_HUMAN_MODE',
-        message:
-          'Cannot send a human message: conversation is in AGENT mode. Call /takeover first.',
-        controlMode: convo.controlMode,
-      });
+    if (
+      convo.controlMode !== ConversationControlMode.HUMAN &&
+      requester.roleName !== 'SUPER_ADMIN'
+    ) {
+      throw new ForbiddenException(
+        'Take control of this conversation before sending manual messages',
+      );
     }
     if (
+      convo.controlMode === ConversationControlMode.HUMAN &&
       convo.controlledByUserId !== requester.id &&
       requester.roleName !== 'SUPER_ADMIN'
     ) {
@@ -265,25 +267,25 @@ export class ConversationControlService {
     // initiated and retryable at the UI level; the rare "sent but not
     // persisted" case surfaces as a log-only inconsistency we'll smooth
     // over in Phase 4's message-status reconciliation.
-    await this.metaSender.sendWhatsappText(
-      convo.companyId,
-      convo.contact.phone,
-      content,
-    );
+    const sentMessageId = await this.metaSender.sendTextMessage({
+      companyId: convo.companyId,
+      recipientPhone: convo.contact.phone,
+      text: content,
+    });
 
     const now = new Date();
     const persisted = await this.prisma.$transaction(async (tx) => {
-      // Guarded update: only proceed if the conversation is still HUMAN
-      // under the same user. If a concurrent handback happened between
-      // the send and the persist, we still persist the message (we don't
-      // want to drop the customer-facing reality) but log the race.
       const message = await tx.message.create({
         data: {
           conversationId: convo.id,
-          senderType: SenderType.HUMAN,
+          senderType: SenderType.AGENT,
           content,
           sentAt: now,
-          metadata: { source: 'human-send', sentByUserId: requester.id },
+          metadata: {
+            source: 'dashboard',
+            sentByUserId: requester.id,
+            ...(sentMessageId ? { metaMessageId: sentMessageId } : {}),
+          },
         },
         select: messageEventSelect,
       });

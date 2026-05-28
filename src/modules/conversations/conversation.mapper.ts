@@ -1,7 +1,8 @@
-import { Prisma } from '@prisma/client';
+import { Prisma, SenderType } from '@prisma/client';
 import {
   ConversationDetailDto,
   ConversationListItemDto,
+  LastMessagePreviewDto,
 } from './dto/conversation-response.dto';
 import { MessageResponseDto } from './dto/message-response.dto';
 
@@ -13,18 +14,35 @@ const contactSelect = {
   phone: true,
 } satisfies Prisma.ClientContactSelect;
 
+const lastMessageSelect = {
+  content: true,
+  sentAt: true,
+  senderType: true,
+} satisfies Prisma.MessageSelect;
+
 export const listConversationInclude = {
   contact: { select: contactSelect },
   messages: {
-    orderBy: { sentAt: 'desc' },
+    orderBy: { sentAt: 'desc' as const },
     take: 1,
+    select: lastMessageSelect,
+  },
+  _count: {
+    select: {
+      messages: {
+        where: {
+          senderType: SenderType.CONTACT,
+          deliveredAt: null,
+        },
+      },
+    },
   },
 } satisfies Prisma.ConversationInclude;
 
 export const detailConversationInclude = {
   contact: { select: contactSelect },
   messages: {
-    orderBy: { sentAt: 'asc' },
+    orderBy: { sentAt: 'asc' as const },
   },
 } satisfies Prisma.ConversationInclude;
 
@@ -38,7 +56,23 @@ export type ConversationDetailRow = Prisma.ConversationGetPayload<{
 
 type MessageRow = ConversationDetailRow['messages'][number];
 
-export function toMessageResponse(message: MessageRow): MessageResponseDto {
+const messageListSelect = {
+  id: true,
+  senderType: true,
+  content: true,
+  sentAt: true,
+  deliveredAt: true,
+  metadata: true,
+  conversationId: true,
+} satisfies Prisma.MessageSelect;
+
+export type MessageListRow = Prisma.MessageGetPayload<{
+  select: typeof messageListSelect;
+}>;
+
+export { messageListSelect };
+
+export function toMessageResponse(message: MessageRow | MessageListRow): MessageResponseDto {
   return {
     id: message.id,
     conversationId: message.conversationId,
@@ -47,6 +81,16 @@ export function toMessageResponse(message: MessageRow): MessageResponseDto {
     metadata: message.metadata,
     sentAt: message.sentAt,
     deliveredAt: message.deliveredAt,
+  };
+}
+
+function toLastMessagePreview(
+  message: ConversationListRow['messages'][number],
+): LastMessagePreviewDto {
+  return {
+    content: message.content,
+    sentAt: message.sentAt,
+    senderType: message.senderType,
   };
 }
 
@@ -63,7 +107,8 @@ export function toConversationListItem(
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     contact: { ...row.contact },
-    lastMessage: latest ? toMessageResponse(latest) : null,
+    lastMessage: latest ? toLastMessagePreview(latest) : null,
+    unreadCount: row._count.messages,
   };
 }
 
