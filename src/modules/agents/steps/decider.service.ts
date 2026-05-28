@@ -33,6 +33,7 @@ export interface DeciderStepResult {
     payload: {
       message: string;
       analysis: AnalyzerOutput;
+      recentMessages: { senderType: string; content: string; sentAt: string }[];
       kb: { id: string; title: string }[];
       products: { id: string; name: string }[];
       staff: { id: string; firstName: string; lastName: string }[];
@@ -53,6 +54,7 @@ export class DeciderService {
     const payload = {
       message: input.context.inbound.content,
       analysis: input.analysis,
+      recentMessages: input.retrieval.recentMessages,
       kb: input.retrieval.knowledgeBase.map((k) => ({
         id: k.id,
         title: k.title,

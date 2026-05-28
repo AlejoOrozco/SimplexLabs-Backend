@@ -44,7 +44,14 @@ export class ResponderService {
 
   async run(input: ResponderStepInput): Promise<ResponderStepResult> {
     const payload = {
+      channel: input.context.channel,
+      customer: input.context.inbound.from,
       customerMessage: input.context.inbound.content,
+      analysis: {
+        intent: input.analysis.intent,
+        urgency: input.analysis.urgency,
+        summary: input.analysis.summary,
+      },
       business: {
         name: input.business.name,
         niche: input.business.niche,
@@ -53,6 +60,7 @@ export class ResponderService {
       action: input.execution.action,
       executed: input.execution.executed,
       deferred: input.execution.deferred,
+      deferredReason: input.execution.deferredReason,
       context: {
         kb: input.execution.result.resolvedKb.map((k) => ({
           title: k.title,

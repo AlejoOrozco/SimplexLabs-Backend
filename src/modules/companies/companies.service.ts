@@ -136,18 +136,34 @@ export class CompaniesService {
   }
 
   async remove(id: string): Promise<{ deleted: boolean }> {
-    try {
-      await this.prisma.company.delete({ where: { id } });
-      return { deleted: true };
-    } catch (err) {
-      if (
-        err instanceof Prisma.PrismaClientKnownRequestError &&
-        err.code === 'P2025'
-      ) {
-        throw new NotFoundException(`Company ${id} not found`);
-      }
-      throw err;
+    const company = await this.prisma.company.findUnique({
+      where: { id },
+      select: { id: true, deactivatedAt: true },
+    });
+
+    if (!company) {
+      throw new NotFoundException(`Company ${id} not found`);
     }
+
+    if (company.deactivatedAt !== null) {
+      return { deleted: true };
+    }
+
+    await this.prisma.$transaction([
+      this.prisma.user.updateMany({
+        where: { companyId: id, isActive: true },
+        data: { isActive: false },
+      }),
+      this.prisma.company.update({
+        where: { id },
+        data: {
+          deactivatedAt: new Date(),
+          deactivationReason: 'Deleted by SUPER_ADMIN',
+        },
+      }),
+    ]);
+
+    return { deleted: true };
   }
 
   private assertAccess(companyId: string, user: AuthenticatedUser): void {

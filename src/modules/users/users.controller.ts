@@ -78,7 +78,7 @@ export class UsersController {
   @Delete(':id')
   @Roles('SUPER_ADMIN')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Delete user — admin only' })
+  @ApiOperation({ summary: 'Delete user (soft delete) — admin only' })
   remove(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: AuthenticatedUser,

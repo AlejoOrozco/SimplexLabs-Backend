@@ -163,26 +163,21 @@ export class UsersService {
 
     const user = await this.prisma.user.findUnique({
       where: { id },
-      select: { supabaseId: true },
+      select: { id: true, isActive: true },
     });
     if (!user) {
       throw new NotFoundException(`User ${id} not found`);
     }
 
-    await this.safeDeleteSupabaseUser(user.supabaseId);
-
-    try {
-      await this.prisma.user.delete({ where: { id } });
+    if (!user.isActive) {
       return { deleted: true };
-    } catch (err) {
-      if (
-        err instanceof Prisma.PrismaClientKnownRequestError &&
-        err.code === 'P2025'
-      ) {
-        throw new NotFoundException(`User ${id} not found`);
-      }
-      throw err;
     }
+
+    await this.prisma.user.update({
+      where: { id },
+      data: { isActive: false },
+    });
+    return { deleted: true };
   }
 
   async completeFirstLogin(userId: string): Promise<UserResponseDto> {

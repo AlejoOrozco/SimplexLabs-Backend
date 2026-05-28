@@ -74,7 +74,9 @@ export class CompaniesController {
   @Delete(':id')
   @Roles('SUPER_ADMIN')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Delete company — admin only' })
+  @ApiOperation({
+    summary: 'Delete company (soft delete + deactivate company users) — admin only',
+  })
   remove(
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<{ deleted: boolean }> {
