@@ -11,6 +11,7 @@ import { PermissionsService } from '../../modules/permissions/permissions.servic
 import { SupabaseAdminService } from '../supabase/supabase-admin.service';
 import type { AuthenticatedUser } from '../decorators/current-user.decorator';
 import { ACCOUNT_DEACTIVATED } from '../auth/account-deactivated';
+import { assertCompanyActiveForUser } from '../auth/assert-company-active';
 import { getCookieValue } from '../http/cookie.util';
 
 @Injectable()
@@ -58,6 +59,9 @@ export class JwtAuthGuard implements CanActivate {
         is_owner: true,
         timezone: true,
         firstLoginCompleted: true,
+        company: {
+          select: { is_platform_owner: true },
+        },
       },
     });
 
@@ -69,9 +73,14 @@ export class JwtAuthGuard implements CanActivate {
       throw new UnauthorizedException(ACCOUNT_DEACTIVATED);
     }
 
+    await assertCompanyActiveForUser(this.prisma, dbUser.companyId);
+
     const permissions = await this.permissionsService.resolvePermissions(
       dbUser.id,
     );
+
+    const isPlatformOwnerCompany =
+      dbUser.company?.is_platform_owner === true;
 
     const authenticated: AuthenticatedUser = {
       id: dbUser.id,
@@ -86,6 +95,7 @@ export class JwtAuthGuard implements CanActivate {
       timezone: dbUser.timezone,
       firstLoginCompleted: dbUser.firstLoginCompleted,
       permissions,
+      isPlatformOwnerCompany,
     };
     request.user = authenticated;
     return true;

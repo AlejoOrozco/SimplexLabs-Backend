@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
-import { isSuperAdmin } from '../auth/user-role.util';
+import { isPlatformSuperAdmin } from '../auth/user-role.util';
 import type { AuthenticatedUser } from '../decorators/current-user.decorator';
 
 /**
@@ -20,11 +20,13 @@ export interface TenantScope {
  * A `CLIENT` without a companyId is rejected with `ForbiddenException`.
  */
 export function scopedCompanyWhere(requester: AuthenticatedUser): TenantScope {
-  if (isSuperAdmin(requester)) {
+  if (isPlatformSuperAdmin(requester, requester.isPlatformOwnerCompany)) {
     if (requester.companyId) {
       return { companyId: requester.companyId };
     }
-    return {};
+    throw new ForbiddenException(
+      'Select a company context or use platform admin APIs',
+    );
   }
   if (!requester.companyId) {
     throw new ForbiddenException('Requester has no company scope');
@@ -40,7 +42,7 @@ export function assertTenantAccess(
   targetCompanyId: string,
   requester: AuthenticatedUser,
 ): void {
-  if (isSuperAdmin(requester)) {
+  if (isPlatformSuperAdmin(requester, requester.isPlatformOwnerCompany)) {
     if (requester.companyId && targetCompanyId !== requester.companyId) {
       throw new ForbiddenException('Access denied');
     }
@@ -60,7 +62,7 @@ export function resolveCompanyId(
   requester: AuthenticatedUser,
   providedCompanyId: string | undefined,
 ): string {
-  if (isSuperAdmin(requester)) {
+  if (isPlatformSuperAdmin(requester, requester.isPlatformOwnerCompany)) {
     if (!providedCompanyId) {
       throw new BadRequestException(
         'companyId is required when creating as SUPER_ADMIN',

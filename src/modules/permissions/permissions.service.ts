@@ -4,7 +4,11 @@ import {
   Injectable,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { PERM } from '../../common/auth/permission-keys';
+import {
+  allCompanyPermissionKeys,
+  COMPANY_ADMIN_ROLE,
+  PERM,
+} from '../../common/auth/permission-keys';
 import type {
   UserPermissionManagementItem,
   UserPermissionsManagementResponse,
@@ -28,10 +32,28 @@ export class PermissionsService {
       select: { role_name: true },
     });
 
-    // `/auth/me` and the dashboard gate UI on this list. API routes still
-    // enforce `@RequirePermissions`, where SUPER_ADMIN bypasses the guard.
     if (user.role_name === SUPER_ADMIN_ROLE) {
-      return Object.values(PERM);
+      const platformKeys = Object.values(PERM).filter((key) =>
+        key.startsWith('platform.'),
+      );
+      const row = await this.prisma.user.findUniqueOrThrow({
+        where: { id: userId },
+        select: {
+          companyId: true,
+          company: { select: { is_platform_owner: true } },
+        },
+      });
+      if (
+        row.companyId &&
+        row.company?.is_platform_owner === true
+      ) {
+        return [...platformKeys, ...allCompanyPermissionKeys()];
+      }
+      return platformKeys;
+    }
+
+    if (user.role_name === COMPANY_ADMIN_ROLE) {
+      return [...allCompanyPermissionKeys()];
     }
 
     const rolePermissions = await this.prisma.role_permissions.findMany({

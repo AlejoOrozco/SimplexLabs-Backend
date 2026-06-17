@@ -14,7 +14,7 @@ import { PermissionsGuard } from '../../../common/guards/permissions.guard';
 import { RequirePermissions } from '../../../common/decorators/require-permissions.decorator';
 import { PERM } from '../../../common/auth/permission-keys';
 import { RolesGuard } from '../../../common/guards/roles.guard';
-import { Roles } from '../../../common/decorators/roles.decorator';
+import { TenantRoles } from '../../../common/decorators/tenant-roles.decorator';
 import {
   CurrentUser,
   type AuthenticatedUser,
@@ -42,7 +42,7 @@ export class AgentConfigController {
 
   @RequirePermissions(PERM.platformAgentsView)
   @Get()
-  @Roles('SUPER_ADMIN', 'CLIENT')
+  @TenantRoles()
   @ApiOperation({
     summary:
       "Get the active AgentConfig for the requester's company (lazy-seeds defaults if missing).",
@@ -56,7 +56,7 @@ export class AgentConfigController {
 
   @RequirePermissions(PERM.platformAgentsManage)
   @Put()
-  @Roles('SUPER_ADMIN', 'CLIENT')
+  @TenantRoles()
   @ApiOperation({
     summary:
       'Update the active AgentConfig (PATCH semantics over PUT; every field is optional).',

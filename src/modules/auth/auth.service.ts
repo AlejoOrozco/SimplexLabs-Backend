@@ -350,6 +350,14 @@ export class AuthService {
     };
   }
 
+  async completeFirstLogin(userId: string): Promise<MeResponseDto> {
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { firstLoginCompleted: true },
+    });
+    return this.getMe(userId);
+  }
+
   async getMe(userId: string): Promise<MeResponseDto> {
     const [user, permissions] = await Promise.all([
       this.prisma.user.findUniqueOrThrow({

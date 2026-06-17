@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -9,7 +8,13 @@ import { PrismaService } from '../../prisma/prisma.service';
 import type { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import { isSuperAdmin } from '../../common/auth/user-role.util';
 import { NotificationsService } from '../notifications/notifications.service';
+import { assertCanInviteAttendeeUser } from './attendee-invite.policy';
 import type { AttendeeResponseDto } from './dto/attendee-response.dto';
+
+export interface SyncAppointmentAttendeesInput {
+  userIds?: string[];
+  contactIds?: string[];
+}
 
 @Injectable()
 export class AttendeesService {
@@ -18,83 +23,36 @@ export class AttendeesService {
     private readonly notificationsService: NotificationsService,
   ) {}
 
-  async addAttendee(
+  /**
+   * Syncs invited users/contacts on create or update (organizer-only).
+   * Omit a field to leave that side unchanged (update only).
+   */
+  async syncAttendees(
     appointmentId: string,
-    data: { userId?: string; contactId?: string },
+    appointment: { title: string; companyId: string; organizerId: string },
+    input: SyncAppointmentAttendeesInput,
     requester: AuthenticatedUser,
-  ): Promise<AttendeeResponseDto> {
-    const appointment = await this.prisma.appointment.findUnique({
-      where: { id: appointmentId },
-      select: {
-        id: true,
-        title: true,
-        organizerId: true,
-        companyId: true,
-      },
-    });
-
-    if (!appointment) {
-      throw new NotFoundException('Appointment not found');
-    }
-
+  ): Promise<void> {
     if (appointment.organizerId !== requester.id) {
-      throw new ForbiddenException('Only the organizer can add attendees');
+      throw new ForbiddenException('Only the organizer can manage attendees');
     }
 
-    if ((!data.userId && !data.contactId) || (data.userId && data.contactId)) {
-      throw new BadRequestException(
-        'Provide either userId or contactId, not both',
+    if (input.userIds !== undefined) {
+      await this.syncUserAttendees(
+        appointmentId,
+        appointment,
+        input.userIds,
+        requester,
       );
     }
 
-    const existingWhere =
-      data.userId !== undefined
-        ? { appointment_id: appointmentId, user_id: data.userId }
-        : { appointment_id: appointmentId, contact_id: data.contactId! };
-
-    const existing = await this.prisma.appointment_attendees.findFirst({
-      where: existingWhere,
-      select: { id: true },
-    });
-
-    if (existing) {
-      throw new BadRequestException('This person is already invited');
+    if (input.contactIds !== undefined) {
+      await this.syncContactAttendees(
+        appointmentId,
+        appointment.companyId,
+        input.contactIds,
+      );
     }
-
-    const row = await this.prisma.appointment_attendees.create({
-      data: {
-        appointment_id: appointmentId,
-        user_id: data.userId ?? null,
-        contact_id: data.contactId ?? null,
-        invitation_status: 'PENDING',
-      },
-      select: {
-        id: true,
-        appointment_id: true,
-        user_id: true,
-        contact_id: true,
-        invitation_status: true,
-        responded_at: true,
-      },
-    });
-
-    if (data.userId) {
-      const invited = await this.prisma.user.findUnique({
-        where: { id: data.userId },
-        select: { companyId: true },
-      });
-      const companyId = invited?.companyId ?? appointment.companyId;
-      await this.notificationsService.create({
-        companyId,
-        type: NotificationType.APPOINTMENT_REQUESTED,
-        title: 'Meeting invitation',
-        body: `You have been invited to "${appointment.title}"`,
-        payload: { appointmentId, kind: 'appointment_invite' },
-        deliverExternal: false,
-      });
-    }
-
-    return this.mapAttendeeRow(row);
   }
 
   async respondToInvitation(
@@ -207,32 +165,161 @@ export class AttendeesService {
     return rows.map((r) => this.mapAttendeeRow(r));
   }
 
-  async removeAttendee(
+  private async syncUserAttendees(
     appointmentId: string,
-    attendeeId: string,
+    appointment: { title: string; companyId: string; organizerId: string },
+    userIds: string[],
     requester: AuthenticatedUser,
-  ): Promise<{ removed: boolean }> {
-    const appointment = await this.prisma.appointment.findUnique({
-      where: { id: appointmentId },
-      select: { organizerId: true },
+  ): Promise<void> {
+    const desiredIds = [
+      ...new Set(userIds.filter((id) => id !== appointment.organizerId)),
+    ];
+
+    const users =
+      desiredIds.length === 0
+        ? []
+        : await this.prisma.user.findMany({
+            where: { id: { in: desiredIds }, isActive: true },
+            select: {
+              id: true,
+              companyId: true,
+              role_name: true,
+              company: { select: { is_platform_owner: true } },
+            },
+          });
+
+    if (users.length !== desiredIds.length) {
+      const found = new Set(users.map((u) => u.id));
+      const missing = desiredIds.filter((id) => !found.has(id));
+      throw new NotFoundException(
+        `User(s) not found or inactive: ${missing.join(', ')}`,
+      );
+    }
+
+    for (const user of users) {
+      assertCanInviteAttendeeUser(
+        requester,
+        {
+          id: user.id,
+          roleName: user.role_name,
+          companyId: user.companyId,
+          isPlatformOwnerCompany: user.company?.is_platform_owner === true,
+        },
+        appointment.companyId,
+      );
+    }
+
+    const existing = await this.prisma.appointment_attendees.findMany({
+      where: { appointment_id: appointmentId, user_id: { not: null } },
+      select: { id: true, user_id: true },
     });
 
-    if (!appointment) {
-      throw new NotFoundException('Appointment not found');
-    }
-    if (appointment.organizerId !== requester.id) {
-      throw new ForbiddenException('Only the organizer can remove attendees');
+    const existingUserIds = new Set(
+      existing
+        .map((row) => row.user_id)
+        .filter((id): id is string => id !== null),
+    );
+    const desiredSet = new Set(desiredIds);
+
+    const toRemove = existing.filter(
+      (row) => row.user_id !== null && !desiredSet.has(row.user_id),
+    );
+    if (toRemove.length > 0) {
+      await this.prisma.appointment_attendees.deleteMany({
+        where: { id: { in: toRemove.map((row) => row.id) } },
+      });
     }
 
-    const result = await this.prisma.appointment_attendees.deleteMany({
-      where: { id: attendeeId, appointment_id: appointmentId },
+    const newlyAdded = users.filter((u) => !existingUserIds.has(u.id));
+    if (newlyAdded.length > 0) {
+      await this.prisma.appointment_attendees.createMany({
+        data: newlyAdded.map((user) => ({
+          appointment_id: appointmentId,
+          user_id: user.id,
+          invitation_status: 'PENDING',
+        })),
+        skipDuplicates: true,
+      });
+
+      await Promise.all(
+        newlyAdded.map((invited) =>
+          this.notificationsService.create({
+            companyId: invited.companyId ?? appointment.companyId,
+            type: NotificationType.APPOINTMENT_REQUESTED,
+            title: 'Meeting invitation',
+            body: `You have been invited to "${appointment.title}"`,
+            payload: {
+              appointmentId,
+              kind: 'appointment_invite',
+              recipientUserId: invited.id,
+            },
+            deliverExternal: false,
+          }),
+        ),
+      );
+    }
+  }
+
+  private async syncContactAttendees(
+    appointmentId: string,
+    companyId: string,
+    contactIds: string[],
+  ): Promise<void> {
+    const desiredIds = [...new Set(contactIds)];
+
+    if (desiredIds.length > 0) {
+      const contacts = await this.prisma.clientContact.findMany({
+        where: { id: { in: desiredIds } },
+        select: { id: true, companyId: true },
+      });
+
+      if (contacts.length !== desiredIds.length) {
+        const found = new Set(contacts.map((c) => c.id));
+        const missing = desiredIds.filter((id) => !found.has(id));
+        throw new NotFoundException(`Contact(s) not found: ${missing.join(', ')}`);
+      }
+
+      for (const contact of contacts) {
+        if (contact.companyId !== companyId) {
+          throw new ForbiddenException(
+            `Contact ${contact.id} does not belong to this company`,
+          );
+        }
+      }
+    }
+
+    const existing = await this.prisma.appointment_attendees.findMany({
+      where: { appointment_id: appointmentId, contact_id: { not: null } },
+      select: { id: true, contact_id: true },
     });
 
-    if (result.count === 0) {
-      throw new NotFoundException('Attendee not found');
+    const existingContactIds = new Set(
+      existing
+        .map((row) => row.contact_id)
+        .filter((id): id is string => id !== null),
+    );
+    const desiredSet = new Set(desiredIds);
+
+    const toRemove = existing.filter(
+      (row) => row.contact_id !== null && !desiredSet.has(row.contact_id),
+    );
+    if (toRemove.length > 0) {
+      await this.prisma.appointment_attendees.deleteMany({
+        where: { id: { in: toRemove.map((row) => row.id) } },
+      });
     }
 
-    return { removed: true };
+    const toAdd = desiredIds.filter((id) => !existingContactIds.has(id));
+    if (toAdd.length > 0) {
+      await this.prisma.appointment_attendees.createMany({
+        data: toAdd.map((contactId) => ({
+          appointment_id: appointmentId,
+          contact_id: contactId,
+          invitation_status: 'PENDING',
+        })),
+        skipDuplicates: true,
+      });
+    }
   }
 
   private mapAttendeeRow(

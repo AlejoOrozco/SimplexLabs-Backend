@@ -133,6 +133,19 @@ export class AuthController {
     return this.authService.getMe(user.id);
   }
 
+  @Post('first-login-complete')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  @ApiCookieAuth('access_token')
+  @ApiOperation({
+    summary: 'Mark onboarding tour complete and return refreshed session user',
+  })
+  async firstLoginComplete(
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<MeResponseDto> {
+    return this.authService.completeFirstLogin(user.id);
+  }
+
   @Get('oauth/google')
   @ApiOperation({ summary: 'Get Google OAuth redirect URL' })
   googleOAuth(): OAuthUrlResult {

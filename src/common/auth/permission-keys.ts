@@ -39,8 +39,24 @@ export const PERM = {
   companyCalendarView: 'company.calendar.view',
   companyCalendarManage: 'company.calendar.manage',
   companyUsersPermissions: 'company.users.permissions',
+  companyDashboardView: 'company.dashboard.view',
   platformPlansManage: 'platform.plans.manage',
   platformAgentsView: 'platform.agents.view',
   platformAgentsManage: 'platform.agents.manage',
   platformAdminAccess: 'platform.admin.access',
 } as const;
+
+export type PermissionKey = (typeof PERM)[keyof typeof PERM];
+
+const COMPANY_ADMIN_ROLE = 'COMPANY_ADMIN';
+
+/** All tenant-scoped permission keys (excludes `platform.*`). */
+export function allCompanyPermissionKeys(): PermissionKey[] {
+  return Object.values(PERM).filter((key) => key.startsWith('company.'));
+}
+
+export function isCompanyPermissionKey(key: string): boolean {
+  return key.startsWith('company.');
+}
+
+export { COMPANY_ADMIN_ROLE };

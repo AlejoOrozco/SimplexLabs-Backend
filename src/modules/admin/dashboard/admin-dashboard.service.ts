@@ -57,12 +57,8 @@ export class AdminDashboardService {
       recentAgentRuns,
     ] = await Promise.all([
       this.prisma.company.count(),
-      this.prisma.company.count({
-        where: { users: { some: { isActive: true } } },
-      }),
-      this.prisma.company.count({
-        where: { users: { every: { isActive: false } } },
-      }),
+      this.prisma.company.count({ where: { isActive: true } }),
+      this.prisma.company.count({ where: { isActive: false } }),
       this.prisma.payment.aggregate({
         where: {
           status: PaymentStatus.CONFIRMED,

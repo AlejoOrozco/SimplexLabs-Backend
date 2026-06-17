@@ -15,6 +15,7 @@ model Company {
   address             String?              @map("address")
   createdAt           DateTime             @default(now()) @map("created_at")
   updatedAt           DateTime             @updatedAt @map("updated_at")
+  isActive            Boolean              @default(true) @map("is_active")
   deactivatedAt       DateTime?
   deactivationReason  String?
   firstLoginCompleted Boolean              @default(false)

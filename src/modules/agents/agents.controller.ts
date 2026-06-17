@@ -17,6 +17,7 @@ import { RequirePermissions } from '../../common/decorators/require-permissions.
 import { PERM } from '../../common/auth/permission-keys';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { TenantRoles } from '../../common/decorators/tenant-roles.decorator';
 import {
   CurrentUser,
   type AuthenticatedUser,
@@ -31,7 +32,7 @@ export class AgentsController {
 
   @RequirePermissions(PERM.platformAgentsView)
   @Get('runs/conversation/:conversationId')
-  @Roles('SUPER_ADMIN', 'CLIENT')
+  @TenantRoles()
   @ApiOperation({
     summary: 'List AgentRuns for a conversation (tenant-scoped, newest first)',
   })

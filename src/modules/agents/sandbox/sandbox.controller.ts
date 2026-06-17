@@ -12,7 +12,7 @@ import { PermissionsGuard } from '../../../common/guards/permissions.guard';
 import { RequirePermissions } from '../../../common/decorators/require-permissions.decorator';
 import { PERM } from '../../../common/auth/permission-keys';
 import { RolesGuard } from '../../../common/guards/roles.guard';
-import { Roles } from '../../../common/decorators/roles.decorator';
+import { TenantRoles } from '../../../common/decorators/tenant-roles.decorator';
 import {
   CurrentUser,
   type AuthenticatedUser,
@@ -31,7 +31,7 @@ export class SandboxController {
   @RequirePermissions(PERM.platformAgentsManage)
   @Post('run')
   @HttpCode(HttpStatus.OK)
-  @Roles('SUPER_ADMIN', 'CLIENT')
+  @TenantRoles()
   @ApiOperation({
     summary:
       'Dry-run the 5-step agent pipeline against the company\'s live config + KB. No WhatsApp is sent; no appointments, orders, payments, notifications, or lifecycle transitions are persisted.',

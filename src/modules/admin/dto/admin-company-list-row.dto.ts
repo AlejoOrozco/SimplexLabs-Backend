@@ -47,9 +47,15 @@ export class AdminCompanyListRowDto {
 
   @ApiProperty({
     description:
-      'Company is not deactivated and has at least one active platform user in any role',
+      'Company tenant flag from `companies.is_active` (admin deactivation)',
   })
   isActive!: boolean;
+
+  @ApiProperty({
+    description:
+      'Company is active and has at least one active platform user in any role',
+  })
+  isOperational!: boolean;
 
   @ApiPropertyOptional({
     type: () => AdminCompanySubscriptionSummaryDto,

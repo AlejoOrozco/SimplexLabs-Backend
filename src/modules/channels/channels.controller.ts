@@ -21,14 +21,14 @@ import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
 import { PERM } from '../../common/auth/permission-keys';
 import { RolesGuard } from '../../common/guards/roles.guard';
-import { Roles } from '../../common/decorators/roles.decorator';
+import { TenantRoles } from '../../common/decorators/tenant-roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 
 /**
  * Manage per-company channel credentials (WhatsApp / IG / Messenger).
  *
- * Only `CLIENT` (tenant owner) and `SUPER_ADMIN` can reach this endpoint.
+ * Tenant roles and `SUPER_ADMIN` can reach this endpoint.
  * Tenant scoping is enforced in the service layer; the role guard here
  * is the coarse outer ring (any authenticated user with a company could
  * otherwise read or mutate credentials).
@@ -36,7 +36,7 @@ import type { AuthenticatedUser } from '../../common/decorators/current-user.dec
 @ApiTags('Channels')
 @ApiCookieAuth('access_token')
 @UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
-@Roles('SUPER_ADMIN', 'CLIENT')
+@TenantRoles()
 @Controller('channels')
 export class ChannelsController {
   constructor(private readonly channelsService: ChannelsService) {}

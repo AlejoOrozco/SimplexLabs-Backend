@@ -731,6 +731,7 @@ export class ExecutorService {
         is_owner: true,
         timezone: true,
         firstLoginCompleted: true,
+        company: { select: { is_platform_owner: true } },
       },
     });
 
@@ -757,6 +758,7 @@ export class ExecutorService {
       timezone: ownerRow.timezone,
       firstLoginCompleted: ownerRow.firstLoginCompleted,
       permissions,
+      isPlatformOwnerCompany: ownerRow.company?.is_platform_owner === true,
     };
 
     try {

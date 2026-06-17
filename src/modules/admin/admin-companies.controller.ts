@@ -7,6 +7,7 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Put,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -25,6 +26,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import { CreateFullCompanyDto } from './dto/create-full-company.dto';
 import { AdminCompanyListRowDto } from './dto/admin-company-list-row.dto';
+import { ReactivateCompanyResponseDto } from './dto/reactivate-company-response.dto';
 import { AdminService } from './admin.service';
 import { AdminClientDetailService } from './dashboard/admin-client-detail.service';
 
@@ -63,6 +65,23 @@ export class AdminCompaniesController {
   @ApiOkResponse({ type: [AdminCompanyListRowDto] })
   listCompanies(): Promise<AdminCompanyListRowDto[]> {
     return this.admin.listAdminCompanies();
+  }
+
+  @RequirePermissions(PERM.platformAdminAccess)
+  @Put(':companyId/reactivate')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      'Reactivate entire company: clear deactivation and set all inactive tenant users to active',
+    description:
+      'Use after DELETE /companies/:id or any flow that deactivated the company and multiple users. For single CLIENT portal user only, PUT /admin/users/:id/reactivate is also available.',
+  })
+  @ApiOkResponse({ type: ReactivateCompanyResponseDto })
+  reactivateCompany(
+    @Param('companyId', new ParseUUIDPipe()) companyId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<ReactivateCompanyResponseDto> {
+    return this.admin.reactivateCompany(companyId, user);
   }
 
   @RequirePermissions(PERM.platformAdminAccess)

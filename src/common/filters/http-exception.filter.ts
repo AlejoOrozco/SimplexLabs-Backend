@@ -26,6 +26,7 @@ import { getCorrelationId } from '../observability/correlation-context';
  *   bad_request            → all other 400s (malformed pagination, etc.)
  *   illegal_state          → lifecycle transition refused
  *   account_deactivated    → user exists but is inactive (401)
+ *   company_deactivated    → user's company tenant is inactive (401)
  *   internal               → anything non-HttpException — intentionally opaque
  */
 export type ApiErrorCode =
@@ -39,6 +40,7 @@ export type ApiErrorCode =
   | 'bad_request'
   | 'illegal_state'
   | 'account_deactivated'
+  | 'company_deactivated'
   | 'internal';
 
 interface ApiErrorBody {
@@ -120,6 +122,9 @@ function resolveApiCode(
   const raw = res?.code;
   if (raw === 'ACCOUNT_DEACTIVATED' || raw === 'account_deactivated') {
     return 'account_deactivated';
+  }
+  if (raw === 'COMPANY_DEACTIVATED' || raw === 'company_deactivated') {
+    return 'company_deactivated';
   }
   return mapStatusToCode(status, message);
 }

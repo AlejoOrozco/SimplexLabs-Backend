@@ -17,7 +17,7 @@ import { PermissionsGuard } from '../../../common/guards/permissions.guard';
 import { RequirePermissions } from '../../../common/decorators/require-permissions.decorator';
 import { PERM } from '../../../common/auth/permission-keys';
 import { RolesGuard } from '../../../common/guards/roles.guard';
-import { Roles } from '../../../common/decorators/roles.decorator';
+import { TenantRoles } from '../../../common/decorators/tenant-roles.decorator';
 import {
   CurrentUser,
   type AuthenticatedUser,
@@ -44,7 +44,7 @@ export class AgentPromptsController {
 
   @RequirePermissions(PERM.platformAgentsView)
   @Get()
-  @Roles('SUPER_ADMIN', 'CLIENT')
+  @TenantRoles()
   @ApiOperation({
     summary:
       'List all 5 role prompts for the active AgentConfig. Missing roles are filled with read-only default placeholders; the first update persists a real row.',
@@ -58,7 +58,7 @@ export class AgentPromptsController {
 
   @RequirePermissions(PERM.platformAgentsManage)
   @Put(':role')
-  @Roles('SUPER_ADMIN', 'CLIENT')
+  @TenantRoles()
   @ApiOperation({
     summary:
       'Update (or auto-create on first write) the prompt for a single role. Role is one of ANALYZER | RETRIEVER | DECIDER | EXECUTOR | RESPONDER.',

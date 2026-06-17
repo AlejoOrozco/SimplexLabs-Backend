@@ -10,6 +10,10 @@ import { CreateCompanyDto } from './dto/create-company.dto';
 import { UpdateCompanyDto } from './dto/update-company.dto';
 import { CompanyResponseDto } from './dto/company-response.dto';
 import type { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
+import {
+  applyCompanyDeactivate,
+  COMPANY_DEACTIVATED_BY_ADMIN_DELETE,
+} from '../../common/company/company-lifecycle';
 
 const companySelect = {
   id: true,
@@ -138,30 +142,28 @@ export class CompaniesService {
   async remove(id: string): Promise<{ deleted: boolean }> {
     const company = await this.prisma.company.findUnique({
       where: { id },
-      select: { id: true, deactivatedAt: true },
+      select: { id: true, isActive: true },
     });
 
     if (!company) {
       throw new NotFoundException(`Company ${id} not found`);
     }
 
-    if (company.deactivatedAt !== null) {
+    if (!company.isActive) {
       return { deleted: true };
     }
 
-    await this.prisma.$transaction([
-      this.prisma.user.updateMany({
+    await this.prisma.$transaction(async (tx) => {
+      await tx.user.updateMany({
         where: { companyId: id, isActive: true },
         data: { isActive: false },
-      }),
-      this.prisma.company.update({
-        where: { id },
-        data: {
-          deactivatedAt: new Date(),
-          deactivationReason: 'Deleted by SUPER_ADMIN',
-        },
-      }),
-    ]);
+      });
+      await applyCompanyDeactivate(
+        tx,
+        id,
+        COMPANY_DEACTIVATED_BY_ADMIN_DELETE,
+      );
+    });
 
     return { deleted: true };
   }

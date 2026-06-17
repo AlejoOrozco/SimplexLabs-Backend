@@ -33,7 +33,8 @@ export class CalendarQueryDto {
 
   @ApiPropertyOptional({
     enum: CalendarAdminScope,
-    description: 'Admin scope: all companies vs only events where you are the organizer',
+    description:
+      'Admin scope: all companies vs events you organize or are invited to',
   })
   @IsEnum(CalendarAdminScope)
   @IsOptional()

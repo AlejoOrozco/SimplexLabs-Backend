@@ -23,6 +23,8 @@ import { AppointmentResponseDto } from './dto/appointment-response.dto';
 import { RejectAppointmentDto } from './dto/reject-appointment.dto';
 import { MarkCallbackHandledDto } from './dto/mark-callback-handled.dto';
 import { NotificationsService } from '../notifications/notifications.service';
+import { AttendeesService } from '../attendees/attendees.service';
+import { isSuperAdmin } from '../../common/auth/user-role.util';
 import type { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import {
   assertTenantAccess,
@@ -32,6 +34,7 @@ import {
 import {
   appointmentInclude,
   toAppointmentResponse,
+  type AppointmentWithRelations,
 } from './appointment.mapper';
 import { MetaSenderService } from '../webhooks/meta-sender.service';
 import { ConversationLifecycleService } from '../conversations/conversation-lifecycle.service';
@@ -51,13 +54,25 @@ export class AppointmentsService {
     private readonly lifecycle: ConversationLifecycleService,
     private readonly realtime: RealtimeService,
     private readonly notifications: NotificationsService,
+    private readonly attendeesService: AttendeesService,
   ) {}
 
   async findAll(
     requester: AuthenticatedUser,
   ): Promise<AppointmentResponseDto[]> {
+    const companyScope = scopedCompanyWhere(requester);
     const rows = await this.prisma.appointment.findMany({
-      where: scopedCompanyWhere(requester),
+      where: {
+        OR: [
+          companyScope,
+          { organizerId: requester.id },
+          {
+            appointment_attendees: {
+              some: { user_id: requester.id },
+            },
+          },
+        ],
+      },
       include: appointmentInclude,
       orderBy: { scheduledAt: 'asc' },
     });
@@ -141,6 +156,9 @@ export class AppointmentsService {
       },
       include: appointmentInclude,
     });
+
+    await this.syncAttendeesIfProvided(row, dto, requester);
+
     return toAppointmentResponse(row);
   }
 
@@ -221,6 +239,9 @@ export class AppointmentsService {
       data,
       include: appointmentInclude,
     });
+
+    await this.syncAttendeesIfProvided(row, dto, requester);
+
     return toAppointmentResponse(row);
   }
 
@@ -591,8 +612,36 @@ export class AppointmentsService {
     if (!row) {
       throw new NotFoundException(`Appointment ${id} not found`);
     }
-    assertTenantAccess(row.companyId, requester);
+    await this.assertCanAccessAppointment(row, requester);
     return row;
+  }
+
+  private async assertCanAccessAppointment(
+    row: { id: string; companyId: string; organizerId: string },
+    requester: AuthenticatedUser,
+  ): Promise<void> {
+    try {
+      assertTenantAccess(row.companyId, requester);
+      return;
+    } catch (err) {
+      if (!(err instanceof ForbiddenException)) {
+        throw err;
+      }
+    }
+
+    if (row.organizerId === requester.id || isSuperAdmin(requester)) {
+      return;
+    }
+
+    const isAttendee = await this.prisma.appointment_attendees.findFirst({
+      where: { appointment_id: row.id, user_id: requester.id },
+      select: { id: true },
+    });
+    if (isAttendee) {
+      return;
+    }
+
+    throw new ForbiddenException('Access denied');
   }
 
   /**
@@ -646,5 +695,32 @@ export class AppointmentsService {
         );
       }
     }
+  }
+
+  private async syncAttendeesIfProvided(
+    row: AppointmentWithRelations,
+    dto: Pick<CreateAppointmentDto, 'attendeeUserIds' | 'attendeeContactIds'>,
+    requester: AuthenticatedUser,
+  ): Promise<void> {
+    if (
+      dto.attendeeUserIds === undefined &&
+      dto.attendeeContactIds === undefined
+    ) {
+      return;
+    }
+
+    await this.attendeesService.syncAttendees(
+      row.id,
+      {
+        title: row.title,
+        companyId: row.companyId,
+        organizerId: row.organizerId,
+      },
+      {
+        userIds: dto.attendeeUserIds,
+        contactIds: dto.attendeeContactIds,
+      },
+      requester,
+    );
   }
 }

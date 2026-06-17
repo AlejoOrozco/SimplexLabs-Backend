@@ -12,6 +12,8 @@ import type { Server, Socket } from 'socket.io';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PermissionsService } from '../permissions/permissions.service';
 import { ACCOUNT_DEACTIVATED } from '../../common/auth/account-deactivated';
+import { assertCompanyActiveForUser } from '../../common/auth/assert-company-active';
+import { COMPANY_DEACTIVATED } from '../../common/auth/company-deactivated';
 import type { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import { companyRoom } from './realtime-events';
 
@@ -72,17 +74,21 @@ export class RealtimeGateway
     } catch (error) {
       if (error instanceof UnauthorizedException) {
         const payload = error.getResponse();
-        if (
-          typeof payload === 'object' &&
-          payload !== null &&
-          'code' in payload &&
-          (payload as { code: unknown }).code === ACCOUNT_DEACTIVATED.code
-        ) {
-          client.emit('auth_error', {
-            code: 'account_deactivated',
-            message: ACCOUNT_DEACTIVATED.message,
-            contact: ACCOUNT_DEACTIVATED.contact,
-          });
+        if (typeof payload === 'object' && payload !== null && 'code' in payload) {
+          const code = (payload as { code: unknown }).code;
+          if (code === ACCOUNT_DEACTIVATED.code) {
+            client.emit('auth_error', {
+              code: 'account_deactivated',
+              message: ACCOUNT_DEACTIVATED.message,
+              contact: ACCOUNT_DEACTIVATED.contact,
+            });
+          } else if (code === COMPANY_DEACTIVATED.code) {
+            client.emit('auth_error', {
+              code: 'company_deactivated',
+              message: COMPANY_DEACTIVATED.message,
+              contact: COMPANY_DEACTIVATED.contact,
+            });
+          }
         }
       }
       const message =
@@ -134,6 +140,7 @@ export class RealtimeGateway
         is_owner: true,
         timezone: true,
         firstLoginCompleted: true,
+        company: { select: { is_platform_owner: true } },
       },
     });
 
@@ -144,6 +151,8 @@ export class RealtimeGateway
     if (!dbUser.isActive) {
       throw new UnauthorizedException(ACCOUNT_DEACTIVATED);
     }
+
+    await assertCompanyActiveForUser(this.prisma, dbUser.companyId);
 
     const permissions = await this.permissionsService.resolvePermissions(
       dbUser.id,
@@ -162,6 +171,7 @@ export class RealtimeGateway
       timezone: dbUser.timezone,
       firstLoginCompleted: dbUser.firstLoginCompleted,
       permissions,
+      isPlatformOwnerCompany: dbUser.company?.is_platform_owner === true,
     };
   }
 }

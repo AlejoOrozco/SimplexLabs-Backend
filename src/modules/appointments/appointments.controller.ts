@@ -23,11 +23,11 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { TenantRoles } from '../../common/decorators/tenant-roles.decorator';
 import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
 import { PERM } from '../../common/auth/permission-keys';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
-import { AddAttendeeDto } from '../attendees/dto/add-attendee.dto';
 import { RespondInvitationDto } from '../attendees/dto/respond-invitation.dto';
 import type { AttendeeResponseDto } from '../attendees/dto/attendee-response.dto';
 
@@ -60,22 +60,6 @@ export class AppointmentsController {
     return this.attendeesService.getAttendees(id, user);
   }
 
-  @Post(':id/attendees')
-  @HttpCode(HttpStatus.CREATED)
-  @RequirePermissions(PERM.companyAppointmentsAttendees)
-  @ApiOperation({ summary: 'Add an attendee to an appointment' })
-  addAttendee(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: AddAttendeeDto,
-    @CurrentUser() user: AuthenticatedUser,
-  ): Promise<AttendeeResponseDto> {
-    return this.attendeesService.addAttendee(
-      id,
-      { userId: dto.userId, contactId: dto.contactId },
-      user,
-    );
-  }
-
   @Put(':id/respond')
   @HttpCode(HttpStatus.OK)
   @RequirePermissions(PERM.companyAppointmentsAttendees)
@@ -86,18 +70,6 @@ export class AppointmentsController {
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<AttendeeResponseDto> {
     return this.attendeesService.respondToInvitation(id, dto.status, user);
-  }
-
-  @Delete(':id/attendees/:attendeeId')
-  @HttpCode(HttpStatus.OK)
-  @RequirePermissions(PERM.companyAppointmentsAttendees)
-  @ApiOperation({ summary: 'Remove an attendee from an appointment' })
-  removeAttendee(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Param('attendeeId', ParseUUIDPipe) attendeeId: string,
-    @CurrentUser() user: AuthenticatedUser,
-  ): Promise<{ removed: boolean }> {
-    return this.attendeesService.removeAttendee(id, attendeeId, user);
   }
 
   @Get(':id')
@@ -175,7 +147,7 @@ export class AppointmentsController {
   }
 
   @Post(':id/confirm')
-  @Roles('SUPER_ADMIN', 'CLIENT')
+  @TenantRoles()
   @RequirePermissions(PERM.companyAppointmentsManage)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
@@ -190,7 +162,7 @@ export class AppointmentsController {
   }
 
   @Post(':id/reject')
-  @Roles('SUPER_ADMIN', 'CLIENT')
+  @TenantRoles()
   @RequirePermissions(PERM.companyAppointmentsManage)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({

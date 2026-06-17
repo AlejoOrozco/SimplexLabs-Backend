@@ -7,17 +7,14 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import type { Request } from 'express';
-import { PermissionsService } from '../../modules/permissions/permissions.service';
 import type { AuthenticatedUser } from '../decorators/current-user.decorator';
 import { PERMISSIONS_KEY } from '../decorators/require-permissions.decorator';
-import { isSuperAdmin } from '../auth/user-role.util';
+import { isCompanyPermissionKey } from '../auth/permission-keys';
+import { isPlatformSuperAdmin } from '../auth/user-role.util';
 
 @Injectable()
 export class PermissionsGuard implements CanActivate {
-  constructor(
-    private readonly reflector: Reflector,
-    private readonly permissionsService: PermissionsService,
-  ) {}
+  constructor(private readonly reflector: Reflector) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const required = this.reflector.getAllAndOverride<string[]>(
@@ -36,12 +33,14 @@ export class PermissionsGuard implements CanActivate {
       throw new UnauthorizedException('User not authenticated');
     }
 
-    if (isSuperAdmin(user)) {
-      return true;
+    if (isPlatformSuperAdmin(user, user.isPlatformOwnerCompany)) {
+      const platformOnly = required.every((p) => !isCompanyPermissionKey(p));
+      if (platformOnly) {
+        return true;
+      }
     }
 
-    const granted = await this.permissionsService.resolvePermissions(user.id);
-    const hasAll = required.every((p) => granted.includes(p));
+    const hasAll = required.every((p) => user.permissions.includes(p));
     if (!hasAll) {
       throw new ForbiddenException(
         'You do not have the required permissions for this action',

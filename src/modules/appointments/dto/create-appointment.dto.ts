@@ -1,4 +1,5 @@
 import {
+  IsArray,
   IsBoolean,
   IsDateString,
   IsEmail,
@@ -113,4 +114,26 @@ export class CreateAppointmentDto {
   @IsDateString()
   @IsOptional()
   recurrenceEndDate?: string;
+
+  @ApiPropertyOptional({
+    type: [String],
+    format: 'uuid',
+    description:
+      'Internal users to invite (same company or SimplexLabs team). They receive an in-app invitation and see the meeting on their calendar.',
+  })
+  @IsArray()
+  @IsUUID('4', { each: true })
+  @IsOptional()
+  attendeeUserIds?: string[];
+
+  @ApiPropertyOptional({
+    type: [String],
+    format: 'uuid',
+    description:
+      'Client contacts to attach as external attendees (must belong to the appointment company).',
+  })
+  @IsArray()
+  @IsUUID('4', { each: true })
+  @IsOptional()
+  attendeeContactIds?: string[];
 }

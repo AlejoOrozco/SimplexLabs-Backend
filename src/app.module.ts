@@ -37,6 +37,7 @@ import { CalendarModule } from './modules/calendar/calendar.module';
 import { PermissionsModule } from './modules/permissions/permissions.module';
 import { AttendeesModule } from './modules/attendees/attendees.module';
 import { SearchModule } from './modules/search/search.module';
+import { DashboardModule } from './modules/dashboard/dashboard.module';
 
 @Module({
   imports: [
@@ -74,6 +75,7 @@ import { SearchModule } from './modules/search/search.module';
     AdminModule,
     AttendeesModule,
     SearchModule,
+    DashboardModule,
   ],
   providers: [
     {

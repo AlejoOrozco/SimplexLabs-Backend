@@ -15,7 +15,12 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UserResponseDto } from './dto/user-response.dto';
 import type { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
-import { isSuperAdmin } from '../../common/auth/user-role.util';
+import {
+  isCompanyAdmin,
+  isPlatformPrivilegedRole,
+  isPlatformSuperAdmin,
+  TENANT_CREATABLE_ROLES,
+} from '../../common/auth/user-role.util';
 
 const userSelect = {
   id: true,
@@ -45,13 +50,17 @@ export class UsersService {
   }
 
   async findAll(requester: AuthenticatedUser): Promise<UserResponseDto[]> {
-    const where: Prisma.UserWhereInput = isSuperAdmin(requester)
+    const where: Prisma.UserWhereInput = isPlatformSuperAdmin(
+      requester,
+      requester.isPlatformOwnerCompany,
+    )
       ? {}
-      : { companyId: requester.companyId };
-
-    if (!isSuperAdmin(requester) && !requester.companyId) {
-      throw new ForbiddenException('Requester has no company scope');
-    }
+      : (() => {
+          if (!requester.companyId) {
+            throw new ForbiddenException('Requester has no company scope');
+          }
+          return { companyId: requester.companyId };
+        })();
 
     const rows = await this.prisma.user.findMany({
       where,
@@ -82,7 +91,8 @@ export class UsersService {
     dto: CreateUserDto,
     requester: AuthenticatedUser,
   ): Promise<UserResponseDto> {
-    this.assertSuperAdmin(requester, 'create user');
+    const companyId = this.resolveCreateCompanyId(dto, requester);
+    this.assertAllowedCreateRole(dto.roleName, requester);
 
     const existing = await this.prisma.user.findUnique({
       where: { email: dto.email },
@@ -92,16 +102,16 @@ export class UsersService {
       throw new ConflictException('Email already in use');
     }
 
-    if (dto.roleName === 'CLIENT' && !dto.companyId) {
-      throw new ForbiddenException('CLIENT users require a companyId');
-    }
-
     const roleRow = await this.prisma.roles.findUnique({
       where: { name: dto.roleName },
       select: { name: true },
     });
     if (!roleRow) {
       throw new BadRequestException(`Unknown role: ${dto.roleName}`);
+    }
+
+    if (dto.roleName === 'SUPER_ADMIN' && companyId) {
+      await this.assertPlatformOwnerCompany(companyId);
     }
 
     const { data: created, error: createErr } =
@@ -129,7 +139,7 @@ export class UsersService {
           firstName: dto.firstName,
           lastName: dto.lastName,
           role_name: dto.roleName,
-          companyId: dto.companyId ?? null,
+          companyId,
         },
         select: userSelect,
       });
@@ -159,15 +169,15 @@ export class UsersService {
     id: string,
     requester: AuthenticatedUser,
   ): Promise<{ deleted: boolean }> {
-    this.assertSuperAdmin(requester, 'delete user');
-
     const user = await this.prisma.user.findUnique({
       where: { id },
-      select: { id: true, isActive: true },
+      select: { id: true, isActive: true, companyId: true, role_name: true },
     });
     if (!user) {
       throw new NotFoundException(`User ${id} not found`);
     }
+
+    this.assertCanDeactivateUser(user, requester);
 
     if (!user.isActive) {
       return { deleted: true };
@@ -208,16 +218,118 @@ export class UsersService {
     targetCompanyId: string | null,
     requester: AuthenticatedUser,
   ): void {
-    if (isSuperAdmin(requester)) return;
+    if (isPlatformSuperAdmin(requester, requester.isPlatformOwnerCompany)) {
+      return;
+    }
     if (targetCompanyId !== requester.companyId) {
       throw new ForbiddenException('Access denied');
     }
   }
 
-  private assertSuperAdmin(requester: AuthenticatedUser, action: string): void {
-    if (!isSuperAdmin(requester)) {
-      throw new ForbiddenException(`Only SUPER_ADMIN can ${action}`);
+  private async assertPlatformOwnerCompany(companyId: string): Promise<void> {
+    const company = await this.prisma.company.findUnique({
+      where: { id: companyId },
+      select: { is_platform_owner: true },
+    });
+    if (!company?.is_platform_owner) {
+      throw new BadRequestException(
+        'SUPER_ADMIN users can only belong to the platform owner company',
+      );
     }
+  }
+
+  private resolveCreateCompanyId(
+    dto: CreateUserDto,
+    requester: AuthenticatedUser,
+  ): string | null {
+    if (isCompanyAdmin(requester)) {
+      if (!requester.companyId) {
+        throw new ForbiddenException('Requester has no company scope');
+      }
+      if (dto.companyId && dto.companyId !== requester.companyId) {
+        throw new ForbiddenException(
+          'You can only create users in your own company',
+        );
+      }
+      return requester.companyId;
+    }
+
+    if (isPlatformSuperAdmin(requester, requester.isPlatformOwnerCompany)) {
+      if (dto.roleName === 'SUPER_ADMIN') {
+        if (!dto.companyId) {
+          throw new BadRequestException(
+            'SUPER_ADMIN users must belong to the platform owner company',
+          );
+        }
+        return dto.companyId;
+      }
+      if (dto.roleName === 'CLIENT' && !dto.companyId) {
+        throw new ForbiddenException('CLIENT users require a companyId');
+      }
+      return dto.companyId ?? null;
+    }
+
+    throw new ForbiddenException('You cannot create users');
+  }
+
+  private assertAllowedCreateRole(
+    roleName: string,
+    requester: AuthenticatedUser,
+  ): void {
+    if (isCompanyAdmin(requester)) {
+      if (
+        !TENANT_CREATABLE_ROLES.includes(
+          roleName as (typeof TENANT_CREATABLE_ROLES)[number],
+        )
+      ) {
+        throw new ForbiddenException('You cannot assign this role');
+      }
+      return;
+    }
+
+    if (isPlatformSuperAdmin(requester, requester.isPlatformOwnerCompany)) {
+      if (roleName === 'SUPER_ADMIN') {
+        return;
+      }
+      if (isPlatformPrivilegedRole(roleName) && roleName !== 'SUPER_ADMIN') {
+        return;
+      }
+      if (
+        TENANT_CREATABLE_ROLES.includes(
+          roleName as (typeof TENANT_CREATABLE_ROLES)[number],
+        ) ||
+        roleName === 'CLIENT'
+      ) {
+        return;
+      }
+    }
+
+    throw new ForbiddenException('You cannot assign this role');
+  }
+
+  private assertCanDeactivateUser(
+    target: { companyId: string | null; role_name: string },
+    requester: AuthenticatedUser,
+  ): void {
+    if (target.role_name === 'SUPER_ADMIN') {
+      throw new ForbiddenException('Cannot deactivate a Super Administrator');
+    }
+
+    if (isPlatformSuperAdmin(requester, requester.isPlatformOwnerCompany)) {
+      return;
+    }
+
+    if (isCompanyAdmin(requester)) {
+      if (target.companyId !== requester.companyId) {
+        throw new ForbiddenException('Access denied');
+      }
+      if (target.role_name === 'COMPANY_ADMIN') {
+        throw new ForbiddenException('Cannot deactivate a company administrator');
+      }
+      return;
+    }
+
+    throw new ForbiddenException('You cannot deactivate users');
   }
 
   private async safeDeleteSupabaseUser(supabaseUserId: string): Promise<void> {

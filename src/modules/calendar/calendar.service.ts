@@ -5,16 +5,17 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { AppointmentStatus, Prisma } from '@prisma/client';
+import { AppointmentStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import { assertTenantAccess } from '../../common/tenant/tenant-scope';
 import { NotificationsService } from '../notifications/notifications.service';
-import { CalendarAdminScope, CalendarQueryDto } from './dto/calendar-query.dto';
+import { CalendarQueryDto } from './dto/calendar-query.dto';
 import { CheckAvailabilityDto } from './dto/check-availability.dto';
 import { MoveAppointmentDto } from './dto/move-appointment.dto';
 import { CreateRecurringDto } from './dto/create-recurring.dto';
 import { persistRecurringAppointmentSeries } from './calendar-recurrence-series.helper';
+import { buildCalendarEventsWhere } from './calendar-events-scope.helper';
 import {
   calendarEventInclude,
   mapAppointmentToCalendarEvent,
@@ -54,27 +55,7 @@ export class CalendarService {
       throw new BadRequestException('end must be after start');
     }
 
-    const where: Prisma.AppointmentWhereInput = {
-      scheduledAt: { gte: start, lte: end },
-      status: { not: AppointmentStatus.CANCELLED },
-    };
-
-    if (user.roleName === 'SUPER_ADMIN') {
-      if (dto.scope === CalendarAdminScope.MINE) {
-        where.organizerId = user.id;
-      } else if (dto.companyId) {
-        where.companyId = dto.companyId;
-      }
-    } else {
-      if (!user.companyId) {
-        throw new ForbiddenException('Requester has no company scope');
-      }
-      where.companyId = user.companyId;
-    }
-
-    if (dto.staffMemberId) {
-      where.staffId = dto.staffMemberId;
-    }
+    const where = buildCalendarEventsWhere(dto, user, { start, end });
 
     const appointments = await this.prisma.appointment.findMany({
       where,
@@ -82,7 +63,9 @@ export class CalendarService {
       orderBy: { scheduledAt: 'asc' },
     });
 
-    return appointments.map(mapAppointmentToCalendarEvent);
+    return appointments.map((row) =>
+      mapAppointmentToCalendarEvent(row, user.id),
+    );
   }
 
   async checkAvailability(

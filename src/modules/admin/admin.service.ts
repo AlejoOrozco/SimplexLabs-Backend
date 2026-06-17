@@ -29,6 +29,10 @@ import { CompleteOnboardingDto } from './dto/complete-onboarding.dto';
 import { SaveOnboardingDraftDto } from './dto/save-onboarding-draft.dto';
 import { SendOnboardingCredentialsDto } from './dto/send-onboarding-credentials.dto';
 import { DeactivateClientDto } from './dto/deactivate-client.dto';
+import {
+  applyCompanyDeactivate,
+  applyCompanyReactivate,
+} from '../../common/company/company-lifecycle';
 import { buildOnboardingAgentPromptCreates } from './onboarding-prompt-seeds';
 import {
   sanitizeMultilineText,
@@ -103,7 +107,7 @@ export class AdminService {
         name: true,
         niche: true,
         is_platform_owner: true,
-        deactivatedAt: true,
+        isActive: true,
         _count: {
           select: {
             users: { where: { isActive: true } },
@@ -141,14 +145,16 @@ export class AdminService {
       const primarySub = row.subscriptions[0];
       const admin = row.users[0] ?? null;
       const activeUsers = row._count.users;
-      const isActive = row.deactivatedAt === null && activeUsers > 0;
+      const companyIsActive = row.isActive;
+      const isOperational = companyIsActive && activeUsers > 0;
 
       return {
         id: row.id,
         name: row.name,
         niche: row.niche,
         isPlatformOwner: row.is_platform_owner,
-        isActive,
+        isActive: companyIsActive,
+        isOperational,
         subscription: primarySub
           ? {
               planName: primarySub.plan.name,
@@ -816,27 +822,22 @@ export class AdminService {
       where: { id: userId },
       select: { id: true, role_name: true, companyId: true, isActive: true },
     });
-    if (!target || target.role_name !== 'CLIENT' || !target.companyId) {
+    const companyId = target?.companyId;
+    if (!target || target.role_name !== 'CLIENT' || !companyId) {
       throw new NotFoundException('Client user not found');
     }
 
-    await this.prisma.$transaction([
-      this.prisma.user.update({
+    await this.prisma.$transaction(async (tx) => {
+      await tx.user.update({
         where: { id: userId },
         data: { isActive: false },
-      }),
-      this.prisma.company.update({
-        where: { id: target.companyId },
-        data: {
-          deactivatedAt: new Date(),
-          deactivationReason: dto.reason,
-        },
-      }),
-    ]);
+      });
+      await applyCompanyDeactivate(tx, companyId, dto.reason);
+    });
 
     try {
       await this.notifications.create({
-        companyId: target.companyId,
+        companyId,
         type: NotificationType.AGENT_NEEDS_ATTENTION,
         title: 'Client account deactivated',
         body: 'A SimplexLabs administrator deactivated this company client portal.',
@@ -846,7 +847,7 @@ export class AdminService {
     } catch (err) {
       const message = err instanceof Error ? err.message : 'unknown error';
       this.logger.warn(
-        `Post-deactivate notification failed for company=${target.companyId}: ${message}`,
+        `Post-deactivate notification failed for company=${companyId}: ${message}`,
       );
     }
 
@@ -865,25 +866,52 @@ export class AdminService {
       where: { id: userId },
       select: { id: true, role_name: true, companyId: true },
     });
-    if (!target || target.role_name !== 'CLIENT' || !target.companyId) {
+    const companyId = target?.companyId;
+    if (!target || target.role_name !== 'CLIENT' || !companyId) {
       throw new NotFoundException('Client user not found');
     }
 
-    await this.prisma.$transaction([
-      this.prisma.user.update({
+    await this.prisma.$transaction(async (tx) => {
+      await tx.user.update({
         where: { id: userId },
         data: { isActive: true },
-      }),
-      this.prisma.company.update({
-        where: { id: target.companyId },
-        data: {
-          deactivatedAt: null,
-          deactivationReason: null,
-        },
-      }),
-    ]);
+      });
+      await applyCompanyReactivate(tx, companyId);
+    });
 
     return { reactivated: true };
+  }
+
+  /**
+   * Restores an entire tenant after company-wide deactivation (e.g. DELETE /companies/:id).
+   * Clears company deactivation fields and sets all inactive users on the company to active.
+   */
+  async reactivateCompany(
+    companyId: string,
+    requester: AuthenticatedUser,
+  ): Promise<{ reactivated: true; usersReactivated: number }> {
+    if (!isSuperAdmin(requester)) {
+      throw new ForbiddenException('Only SUPER_ADMIN may reactivate companies');
+    }
+
+    const company = await this.prisma.company.findUnique({
+      where: { id: companyId },
+      select: { id: true },
+    });
+    if (!company) {
+      throw new NotFoundException(`Company ${companyId} not found`);
+    }
+
+    const usersReactivated = await this.prisma.$transaction(async (tx) => {
+      const { count } = await tx.user.updateMany({
+        where: { companyId, isActive: false },
+        data: { isActive: true },
+      });
+      await applyCompanyReactivate(tx, companyId);
+      return count;
+    });
+
+    return { reactivated: true, usersReactivated };
   }
 
   private assertCompanyPayload(dto: CompleteOnboardingDto): void {

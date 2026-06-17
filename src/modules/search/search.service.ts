@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
+import { canSearchAttendeeUser } from '../attendees/attendee-invite.policy';
 
 export interface AttendeeSearchResult {
   id: string;
@@ -116,21 +117,12 @@ export class SearchService {
           ...userWhereBase,
           company: { is_platform_owner: true },
         },
-        include: { company: { select: { name: true } } },
+        include: { company: { select: { name: true, is_platform_owner: true } } },
         take: 5,
       });
 
       results.push(
-        ...simplexUsers.map((u) => ({
-          id: u.id,
-          name: `${u.firstName} ${u.lastName}`,
-          email: u.email,
-          type: 'user' as const,
-          group: 'SimplexLabs Team',
-          groupKey: 'simplex_team',
-          companyName: u.company?.name ?? 'SimplexLabs',
-          roleName: u.role_name,
-        })),
+        ...this.mapSearchUsers(requester, simplexUsers, 'SimplexLabs Team', 'simplex_team'),
       );
 
       const ownStaff = await this.prisma.user.findMany({
@@ -138,21 +130,12 @@ export class SearchService {
           ...userWhereBase,
           companyId: requester.companyId,
         },
-        include: { company: { select: { name: true } } },
+        include: { company: { select: { name: true, is_platform_owner: true } } },
         take: 5,
       });
 
       results.push(
-        ...ownStaff.map((u) => ({
-          id: u.id,
-          name: `${u.firstName} ${u.lastName}`,
-          email: u.email,
-          type: 'user' as const,
-          group: 'My Team',
-          groupKey: 'company_team',
-          companyName: u.company?.name ?? '',
-          roleName: u.role_name,
-        })),
+        ...this.mapSearchUsers(requester, ownStaff, 'My Team', 'company_team'),
       );
 
       const contacts = await this.prisma.clientContact.findMany({
@@ -195,21 +178,12 @@ export class SearchService {
         ...userWhereBase,
         companyId: requester.companyId,
       },
-      include: { company: { select: { name: true } } },
+      include: { company: { select: { name: true, is_platform_owner: true } } },
       take: 8,
     });
 
     results.push(
-      ...ownUsers.map((u) => ({
-        id: u.id,
-        name: `${u.firstName} ${u.lastName}`,
-        email: u.email,
-        type: 'user' as const,
-        group: 'My Team',
-        groupKey: 'company_team',
-        companyName: u.company?.name ?? '',
-        roleName: u.role_name,
-      })),
+      ...this.mapSearchUsers(requester, ownUsers, 'My Team', 'company_team'),
     );
 
     const contacts = await this.prisma.clientContact.findMany({
@@ -241,5 +215,39 @@ export class SearchService {
     );
 
     return results;
+  }
+
+  private mapSearchUsers(
+    requester: AuthenticatedUser,
+    users: Array<{
+      id: string;
+      firstName: string;
+      lastName: string;
+      email: string;
+      role_name: string;
+      companyId: string | null;
+      company: { name: string; is_platform_owner: boolean } | null;
+    }>,
+    group: string,
+    groupKey: string,
+  ): AttendeeSearchResult[] {
+    return users
+      .filter((user) =>
+        canSearchAttendeeUser(requester, {
+          roleName: user.role_name,
+          companyId: user.companyId,
+          isPlatformOwnerCompany: user.company?.is_platform_owner === true,
+        }),
+      )
+      .map((user) => ({
+        id: user.id,
+        name: `${user.firstName} ${user.lastName}`,
+        email: user.email,
+        type: 'user' as const,
+        group,
+        groupKey,
+        companyName: user.company?.name ?? '',
+        roleName: user.role_name,
+      }));
   }
 }

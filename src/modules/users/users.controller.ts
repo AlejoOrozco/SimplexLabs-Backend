@@ -21,7 +21,6 @@ import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
 import { PERM } from '../../common/auth/permission-keys';
 import { RolesGuard } from '../../common/guards/roles.guard';
-import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 
@@ -35,7 +34,8 @@ export class UsersController {
   @RequirePermissions(PERM.companyUsersView)
   @Get()
   @ApiOperation({
-    summary: 'List users — admins see all, clients see their own company',
+    summary:
+      'List users — SUPER_ADMIN sees all companies; company admins see their tenant',
   })
   findAll(@CurrentUser() user: AuthenticatedUser): Promise<UserResponseDto[]> {
     return this.usersService.findAll(user);
@@ -53,9 +53,11 @@ export class UsersController {
 
   @RequirePermissions(PERM.companyUsersManage)
   @Post()
-  @Roles('SUPER_ADMIN')
   @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ summary: 'Create user — admin only' })
+  @ApiOperation({
+    summary:
+      'Create user — platform super-admin or company admin (tenant-scoped)',
+  })
   create(
     @Body() dto: CreateUserDto,
     @CurrentUser() user: AuthenticatedUser,
@@ -76,9 +78,11 @@ export class UsersController {
 
   @RequirePermissions(PERM.companyUsersManage)
   @Delete(':id')
-  @Roles('SUPER_ADMIN')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Delete user (soft delete) — admin only' })
+  @ApiOperation({
+    summary:
+      'Soft-delete user — platform super-admin or company admin (tenant-scoped)',
+  })
   remove(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: AuthenticatedUser,

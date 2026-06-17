@@ -55,6 +55,7 @@ export function mapCompanyDetail(row: CompanyDetailRow) {
     address: row.address,
     createdAt: toIso(row.createdAt),
     updatedAt: toIso(row.updatedAt),
+    isActive: row.isActive,
     deactivatedAt: row.deactivatedAt ? toIso(row.deactivatedAt) : null,
     deactivationReason: row.deactivationReason,
     firstLoginCompleted: row.firstLoginCompleted,

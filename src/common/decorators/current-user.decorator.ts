@@ -20,6 +20,8 @@ export interface AuthenticatedUser {
   firstLoginCompleted: boolean;
   /** Resolved keys from `PermissionsService.resolvePermissions`. */
   permissions: string[];
+  /** True when `companyId` points at the platform-owner tenant. */
+  isPlatformOwnerCompany: boolean;
 }
 
 export const CurrentUser = createParamDecorator(
