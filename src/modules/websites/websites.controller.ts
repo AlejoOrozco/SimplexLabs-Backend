@@ -26,14 +26,12 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
 import { PERM } from '../../common/auth/permission-keys';
-import { RolesGuard } from '../../common/guards/roles.guard';
-import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 
 @ApiTags('Websites')
 @ApiCookieAuth('access_token')
-@UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('websites')
 export class WebsitesController {
   constructor(private readonly websitesService: WebsitesService) {}
@@ -68,10 +66,10 @@ export class WebsitesController {
     return this.websitesService.findOne(id, user);
   }
 
-  @Roles('SUPER_ADMIN')
+  @RequirePermissions(PERM.companyWebsitesManage)
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ summary: 'Create website — SUPER_ADMIN only' })
+  @ApiOperation({ summary: 'Create website for the requester company' })
   create(
     @Body() dto: CreateWebsiteDto,
     @CurrentUser() user: AuthenticatedUser,
@@ -79,9 +77,9 @@ export class WebsitesController {
     return this.websitesService.create(dto, user);
   }
 
-  @Roles('SUPER_ADMIN')
+  @RequirePermissions(PERM.companyWebsitesManage)
   @Put(':id')
-  @ApiOperation({ summary: 'Update website — SUPER_ADMIN only' })
+  @ApiOperation({ summary: 'Update website' })
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateWebsiteDto,
@@ -90,10 +88,10 @@ export class WebsitesController {
     return this.websitesService.update(id, dto, user);
   }
 
-  @Roles('SUPER_ADMIN')
+  @RequirePermissions(PERM.companyWebsitesManage)
   @Delete(':id')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Soft-delete website — SUPER_ADMIN only' })
+  @ApiOperation({ summary: 'Soft-delete website' })
   remove(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: AuthenticatedUser,

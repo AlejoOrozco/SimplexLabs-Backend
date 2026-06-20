@@ -35,15 +35,6 @@ export class MetaSenderService {
     private readonly config: ConfigService,
   ) {}
 
-  /** @deprecated Prefer {@link sendTextMessage} — kept for existing call sites. */
-  async sendWhatsappText(
-    companyId: string,
-    recipientPhone: string,
-    text: string,
-  ): Promise<void> {
-    await this.sendTextMessage({ companyId, recipientPhone, text });
-  }
-
   async sendTextMessage(params: SendTextMessageParams): Promise<string | null> {
     const { apiKey, baseUrl } = await this.getCredentials(params.companyId);
     const to = normalizeRecipient(params.recipientPhone);
@@ -84,14 +75,6 @@ export class MetaSenderService {
       );
       throw error;
     }
-  }
-
-  /** @deprecated Prefer {@link markAsRead} — kept for existing call sites. */
-  async markWhatsappAsRead(
-    companyId: string,
-    metaMessageId: string,
-  ): Promise<void> {
-    await this.markAsRead({ companyId, metaMessageId });
   }
 
   async markAsRead(params: MarkAsReadParams): Promise<void> {

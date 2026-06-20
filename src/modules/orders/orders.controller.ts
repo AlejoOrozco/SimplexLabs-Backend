@@ -20,13 +20,12 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
 import { PERM } from '../../common/auth/permission-keys';
-import { RolesGuard } from '../../common/guards/roles.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 
 @ApiTags('Orders')
 @ApiCookieAuth('access_token')
-@UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('orders')
 export class OrdersController {
   constructor(private readonly ordersService: OrdersService) {}

@@ -20,10 +20,7 @@ import { AppointmentResponseDto } from './dto/appointment-response.dto';
 import { RejectAppointmentDto } from './dto/reject-appointment.dto';
 import { MarkCallbackHandledDto } from './dto/mark-callback-handled.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
-import { RolesGuard } from '../../common/guards/roles.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
-import { Roles } from '../../common/decorators/roles.decorator';
-import { TenantRoles } from '../../common/decorators/tenant-roles.decorator';
 import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
 import { PERM } from '../../common/auth/permission-keys';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -33,7 +30,7 @@ import type { AttendeeResponseDto } from '../attendees/dto/attendee-response.dto
 
 @ApiTags('Appointments')
 @ApiCookieAuth('access_token')
-@UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('appointments')
 export class AppointmentsController {
   constructor(
@@ -94,7 +91,6 @@ export class AppointmentsController {
   }
 
   @Put(':id/request-callback')
-  @Roles('CLIENT')
   @RequirePermissions(PERM.companyAppointmentsManage)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
@@ -109,8 +105,7 @@ export class AppointmentsController {
   }
 
   @Put(':id/mark-callback-handled')
-  @Roles('SUPER_ADMIN')
-  @RequirePermissions(PERM.companyAppointmentsManage)
+  @RequirePermissions(PERM.platformAdminAccess)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
@@ -147,7 +142,6 @@ export class AppointmentsController {
   }
 
   @Post(':id/confirm')
-  @TenantRoles()
   @RequirePermissions(PERM.companyAppointmentsManage)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
@@ -162,7 +156,6 @@ export class AppointmentsController {
   }
 
   @Post(':id/reject')
-  @TenantRoles()
   @RequirePermissions(PERM.companyAppointmentsManage)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({

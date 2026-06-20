@@ -8,7 +8,7 @@ import {
 import { AppointmentStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
-import { assertTenantAccess } from '../../common/tenant/tenant-scope';
+import { assertTenantAccess, resolveCompanyId } from '../../common/tenant/tenant-scope';
 import { NotificationsService } from '../notifications/notifications.service';
 import { CalendarQueryDto } from './dto/calendar-query.dto';
 import { CheckAvailabilityDto } from './dto/check-availability.dto';
@@ -23,7 +23,6 @@ import {
 import {
   evaluateWorkingHoursAndBlocks,
   findConflictingAppointments,
-  resolveCompanyIdForAvailability,
 } from './calendar-availability.helper';
 import { notifyAppointmentReschedule } from './calendar-reschedule-notification.helper';
 import type {
@@ -72,7 +71,7 @@ export class CalendarService {
     dto: CheckAvailabilityDto,
     user: AuthenticatedUser,
   ): Promise<CheckAvailabilityResult> {
-    const companyId = resolveCompanyIdForAvailability(dto, user);
+    const companyId = resolveCompanyId(user, dto.companyId);
     const proposedStart = new Date(dto.proposedStart);
     if (Number.isNaN(proposedStart.valueOf())) {
       throw new BadRequestException('Invalid proposedStart');

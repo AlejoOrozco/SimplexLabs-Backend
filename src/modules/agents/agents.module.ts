@@ -36,7 +36,7 @@ import { SandboxService } from './sandbox/sandbox.service';
  *     → ExecutorService  (deterministic)
  *     → ResponderService (Groq text)
  *   → persist AgentRun + outbound Message
- *   → MetaSenderService.sendWhatsappText
+ *   → MetaSenderService.sendTextMessage
  *
  * Uses `forwardRef(WebhooksModule)` because WebhooksModule depends on
  * AgentsModule (for pipeline trigger) and AgentsModule depends on

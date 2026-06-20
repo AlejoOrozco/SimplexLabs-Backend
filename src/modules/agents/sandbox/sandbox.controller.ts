@@ -11,8 +11,6 @@ import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../../common/guards/permissions.guard';
 import { RequirePermissions } from '../../../common/decorators/require-permissions.decorator';
 import { PERM } from '../../../common/auth/permission-keys';
-import { RolesGuard } from '../../../common/guards/roles.guard';
-import { TenantRoles } from '../../../common/decorators/tenant-roles.decorator';
 import {
   CurrentUser,
   type AuthenticatedUser,
@@ -23,7 +21,7 @@ import { SandboxRunResponseDto } from './dto/sandbox-run-response.dto';
 
 @ApiTags('Agent Sandbox')
 @ApiCookieAuth('access_token')
-@UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('agent-sandbox')
 export class SandboxController {
   constructor(private readonly sandbox: SandboxService) {}
@@ -31,7 +29,6 @@ export class SandboxController {
   @RequirePermissions(PERM.platformAgentsManage)
   @Post('run')
   @HttpCode(HttpStatus.OK)
-  @TenantRoles()
   @ApiOperation({
     summary:
       'Dry-run the 5-step agent pipeline against the company\'s live config + KB. No WhatsApp is sent; no appointments, orders, payments, notifications, or lifecycle transitions are persisted.',

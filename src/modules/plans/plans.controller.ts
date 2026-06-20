@@ -32,8 +32,6 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
 import { PERM } from '../../common/auth/permission-keys';
-import { RolesGuard } from '../../common/guards/roles.guard';
-import { Roles } from '../../common/decorators/roles.decorator';
 
 @ApiTags('Plans')
 @Controller('plans')
@@ -76,8 +74,7 @@ export class PlansController {
 
   @RequirePermissions(PERM.platformPlansManage)
   @Post()
-  @UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
-  @Roles('SUPER_ADMIN')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
   @HttpCode(HttpStatus.CREATED)
   @ApiCookieAuth('access_token')
   @ApiOperation({ summary: 'Create plan — admin only' })
@@ -87,8 +84,7 @@ export class PlansController {
 
   @RequirePermissions(PERM.platformPlansManage)
   @Put(':id')
-  @UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
-  @Roles('SUPER_ADMIN')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
   @ApiCookieAuth('access_token')
   @ApiOperation({ summary: 'Update plan — admin only' })
   update(
@@ -100,8 +96,7 @@ export class PlansController {
 
   @RequirePermissions(PERM.platformPlansManage)
   @Delete(':id')
-  @UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
-  @Roles('SUPER_ADMIN')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
   @HttpCode(HttpStatus.OK)
   @ApiCookieAuth('access_token')
   @ApiOperation({ summary: 'Soft-delete plan — admin only' })

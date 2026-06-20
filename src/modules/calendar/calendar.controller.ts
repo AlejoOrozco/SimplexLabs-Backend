@@ -10,7 +10,6 @@ import {
   Put,
   Query,
   UseGuards,
-  BadRequestException,
 } from '@nestjs/common';
 import {
   ApiCookieAuth,
@@ -27,7 +26,7 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
 import { PERM } from '../../common/auth/permission-keys';
-import { isSuperAdmin } from '../../common/auth/user-role.util';
+import { resolveCompanyId } from '../../common/tenant/tenant-scope';
 import {
   CurrentUser,
   type AuthenticatedUser,
@@ -92,14 +91,7 @@ export class CalendarController {
     @Query() query: CalendarStaffQueryDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    const companyId = isSuperAdmin(user)
-      ? query.companyId
-      : user.companyId ?? undefined;
-    if (isSuperAdmin(user) && !companyId) {
-      throw new BadRequestException(
-        'companyId query parameter is required for SUPER_ADMIN',
-      );
-    }
-    return this.calendarService.getStaffMembers(companyId as string, user);
+    const companyId = resolveCompanyId(user, query.companyId);
+    return this.calendarService.getStaffMembers(companyId, user);
   }
 }

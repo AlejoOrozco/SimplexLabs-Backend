@@ -6,7 +6,7 @@ import {
 import { NotificationType } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
-import { isSuperAdmin } from '../../common/auth/user-role.util';
+import { isPlatformSuperAdmin } from '../../common/auth/user-role.util';
 import { NotificationsService } from '../notifications/notifications.service';
 import { assertCanInviteAttendeeUser } from './attendee-invite.policy';
 import type { AttendeeResponseDto } from './dto/attendee-response.dto';
@@ -126,7 +126,7 @@ export class AttendeesService {
       select: { id: true },
     });
 
-    if (!isOrganizer && !isAttendee && !isSuperAdmin(requester)) {
+    if (!isOrganizer && !isAttendee && !isPlatformSuperAdmin(requester)) {
       throw new ForbiddenException('You are not part of this appointment');
     }
 

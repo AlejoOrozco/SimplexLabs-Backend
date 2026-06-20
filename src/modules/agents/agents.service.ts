@@ -2,6 +2,7 @@ import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/commo
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
+import { isPlatformSuperAdmin } from '../../common/auth/user-role.util';
 import { assertTenantAccess } from '../../common/tenant/tenant-scope';
 import { AgentRunResponseDto } from './dto/agent-run-response.dto';
 
@@ -74,8 +75,8 @@ export class AgentsService {
     requester: AuthenticatedUser,
     options: { limit?: number } = {},
   ): Promise<AgentRunResponseDto[]> {
-    if (requester.roleName !== 'SUPER_ADMIN') {
-      throw new ForbiddenException('Only SUPER_ADMIN may list failed runs');
+    if (!isPlatformSuperAdmin(requester, requester.isPlatformOwnerCompany)) {
+      throw new ForbiddenException('Only platform operators may list failed runs');
     }
     const limit = clampLimit(options.limit);
 

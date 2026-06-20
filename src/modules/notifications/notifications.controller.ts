@@ -14,10 +14,6 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
 import { PERM } from '../../common/auth/permission-keys';
-import { RolesGuard } from '../../common/guards/roles.guard';
-import { Roles } from '../../common/decorators/roles.decorator';
-import { TenantRoles } from '../../common/decorators/tenant-roles.decorator';
-import { TENANT_ROLES } from '../../common/auth/user-role.util';
 import {
   CurrentUser,
   type AuthenticatedUser,
@@ -31,14 +27,13 @@ import {
 
 @ApiTags('Notifications')
 @ApiCookieAuth('access_token')
-@UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('notifications')
 export class NotificationsController {
   constructor(private readonly notifications: NotificationsService) {}
 
   @RequirePermissions(PERM.companyNotificationsView)
   @Get()
-  @TenantRoles()
   @ApiOperation({
     summary:
       'List notifications. CLIENT is scoped to their company; SUPER_ADMIN sees all companies unless companyId is provided.',
@@ -52,7 +47,6 @@ export class NotificationsController {
 
   @RequirePermissions(PERM.companyNotificationsView)
   @Get(':id')
-  @TenantRoles()
   @ApiOperation({ summary: 'Get a single notification (tenant-scoped).' })
   findOne(
     @Param('id', ParseUUIDPipe) id: string,
@@ -64,7 +58,6 @@ export class NotificationsController {
   @RequirePermissions(PERM.companyNotificationsManage)
   @Post('mark-read/:id')
   @HttpCode(HttpStatus.OK)
-  @TenantRoles()
   @ApiOperation({
     summary:
       'Mark a notification as read (legacy path alias for dashboard clients).',
@@ -79,7 +72,6 @@ export class NotificationsController {
   @RequirePermissions(PERM.companyNotificationsManage)
   @Post(':id/read')
   @HttpCode(HttpStatus.OK)
-  @TenantRoles()
   @ApiOperation({
     summary:
       'Mark a notification as read. Idempotent — repeat calls return the same readAt.',
@@ -94,10 +86,9 @@ export class NotificationsController {
   @RequirePermissions(PERM.companyNotificationsManage)
   @Post('read-all')
   @HttpCode(HttpStatus.OK)
-  @Roles(...TENANT_ROLES)
   @ApiOperation({
     summary:
-      'Mark all unread notifications for the requester company as read. Tenant roles only.',
+      'Mark all unread notifications for the requester company as read.',
   })
   markAllRead(
     @CurrentUser() user: AuthenticatedUser,

@@ -13,8 +13,6 @@ import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../../common/guards/permissions.guard';
 import { RequirePermissions } from '../../../common/decorators/require-permissions.decorator';
 import { PERM } from '../../../common/auth/permission-keys';
-import { RolesGuard } from '../../../common/guards/roles.guard';
-import { TenantRoles } from '../../../common/decorators/tenant-roles.decorator';
 import {
   CurrentUser,
   type AuthenticatedUser,
@@ -35,14 +33,13 @@ class CompanyScopeQueryDto {
 
 @ApiTags('Agent Config')
 @ApiCookieAuth('access_token')
-@UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('agent-config')
 export class AgentConfigController {
   constructor(private readonly agentConfig: AgentConfigService) {}
 
   @RequirePermissions(PERM.platformAgentsView)
   @Get()
-  @TenantRoles()
   @ApiOperation({
     summary:
       "Get the active AgentConfig for the requester's company (lazy-seeds defaults if missing).",
@@ -56,7 +53,6 @@ export class AgentConfigController {
 
   @RequirePermissions(PERM.platformAgentsManage)
   @Put()
-  @TenantRoles()
   @ApiOperation({
     summary:
       'Update the active AgentConfig (PATCH semantics over PUT; every field is optional).',

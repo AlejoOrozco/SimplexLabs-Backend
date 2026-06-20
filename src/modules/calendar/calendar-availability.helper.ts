@@ -1,30 +1,6 @@
-import {
-  BadRequestException,
-  ForbiddenException,
-} from '@nestjs/common';
 import { AppointmentStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
-import type { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import { getZonedParts } from '../scheduling/timezone.util';
-import type { CheckAvailabilityDto } from './dto/check-availability.dto';
-
-export function resolveCompanyIdForAvailability(
-  dto: CheckAvailabilityDto,
-  user: AuthenticatedUser,
-): string {
-  if (user.roleName === 'SUPER_ADMIN') {
-    if (!dto.companyId) {
-      throw new BadRequestException(
-        'companyId is required when checking availability as SUPER_ADMIN',
-      );
-    }
-    return dto.companyId;
-  }
-  if (!user.companyId) {
-    throw new ForbiddenException('Requester has no company scope');
-  }
-  return user.companyId;
-}
 
 export async function findConflictingAppointments(
   prisma: PrismaService,

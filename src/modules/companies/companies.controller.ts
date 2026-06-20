@@ -20,22 +20,19 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
 import { PERM } from '../../common/auth/permission-keys';
-import { RolesGuard } from '../../common/guards/roles.guard';
-import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 
 @ApiTags('Companies')
 @ApiCookieAuth('access_token')
-@UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('companies')
 export class CompaniesController {
   constructor(private readonly companiesService: CompaniesService) {}
 
-  @RequirePermissions(PERM.companyCompaniesView)
+  @RequirePermissions(PERM.platformAdminAccess)
   @Get()
-  @Roles('SUPER_ADMIN')
-  @ApiOperation({ summary: 'List all companies — admin only' })
+  @ApiOperation({ summary: 'List all companies — platform admin only' })
   findAll(): Promise<CompanyResponseDto[]> {
     return this.companiesService.findAll();
   }
@@ -50,11 +47,10 @@ export class CompaniesController {
     return this.companiesService.findOne(id, user);
   }
 
-  @RequirePermissions(PERM.companyCompaniesManage)
+  @RequirePermissions(PERM.platformAdminAccess)
   @Post()
-  @Roles('SUPER_ADMIN')
   @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ summary: 'Create company — admin only' })
+  @ApiOperation({ summary: 'Create company — platform admin only' })
   create(@Body() dto: CreateCompanyDto): Promise<CompanyResponseDto> {
     return this.companiesService.create(dto);
   }
@@ -70,12 +66,11 @@ export class CompaniesController {
     return this.companiesService.update(id, dto, user);
   }
 
-  @RequirePermissions(PERM.companyCompaniesManage)
+  @RequirePermissions(PERM.platformAdminAccess)
   @Delete(':id')
-  @Roles('SUPER_ADMIN')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'Delete company (soft delete + deactivate company users) — admin only',
+    summary: 'Delete company (soft delete + deactivate company users) — platform admin only',
   })
   remove(
     @Param('id', ParseUUIDPipe) id: string,

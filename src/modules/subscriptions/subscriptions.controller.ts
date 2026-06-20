@@ -21,11 +21,9 @@ import { RecordSubscriptionPaymentDto } from './dto/record-subscription-payment.
 import { CancelSubscriptionDto } from './dto/cancel-subscription.dto';
 import { AdminBillingOverviewResponseDto } from './dto/admin-billing-overview.response.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
-import { RolesGuard } from '../../common/guards/roles.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
 import { PERM } from '../../common/auth/permission-keys';
-import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 
@@ -46,8 +44,6 @@ export class SubscriptionsController {
   }
 
   @Get('admin/billing-overview')
-  @UseGuards(RolesGuard)
-  @Roles('SUPER_ADMIN')
   @RequirePermissions(PERM.platformAdminAccess)
   @ApiOperation({ summary: 'Admin billing dashboard aggregates' })
   getBillingOverview(): Promise<AdminBillingOverviewResponseDto> {
@@ -75,8 +71,6 @@ export class SubscriptionsController {
   }
 
   @Post()
-  @UseGuards(RolesGuard)
-  @Roles('SUPER_ADMIN')
   @RequirePermissions(PERM.platformAdminAccess)
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Create subscription with setup billing record' })
@@ -97,8 +91,6 @@ export class SubscriptionsController {
   }
 
   @Put(':id/schedule-upgrade')
-  @UseGuards(RolesGuard)
-  @Roles('SUPER_ADMIN')
   @RequirePermissions(PERM.platformAdminAccess)
   @ApiOperation({ summary: 'Schedule plan upgrade for next billing cycle' })
   scheduleUpgrade(
@@ -110,8 +102,6 @@ export class SubscriptionsController {
   }
 
   @Put(':id/cancel-upgrade')
-  @UseGuards(RolesGuard)
-  @Roles('SUPER_ADMIN')
   @RequirePermissions(PERM.platformAdminAccess)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Cancel a scheduled upgrade' })
@@ -124,8 +114,6 @@ export class SubscriptionsController {
 
   @Post(':id/record-payment')
   @HttpCode(HttpStatus.OK)
-  @UseGuards(RolesGuard)
-  @Roles('SUPER_ADMIN')
   @RequirePermissions(PERM.platformAdminAccess)
   @ApiOperation({ summary: 'Record a subscription payment and advance period' })
   recordPayment(
@@ -141,8 +129,6 @@ export class SubscriptionsController {
   }
 
   @Put(':id/cancel')
-  @UseGuards(RolesGuard)
-  @Roles('SUPER_ADMIN')
   @RequirePermissions(PERM.platformAdminAccess)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Cancel subscription' })

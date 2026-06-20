@@ -41,15 +41,12 @@ export class WhatsappNotificationAdapter {
       };
     }
     try {
-      await this.meta.sendWhatsappText(
-        params.companyId,
-        params.to,
-        params.text,
-      );
-      // MetaSenderService does not yet surface the provider message id
-      // directly — it logs it. Phase 6 is scoped to track attempt+outcome,
-      // not to refactor sender return shapes.
-      return { success: true, providerRefId: null, error: null };
+      const providerRefId = await this.meta.sendTextMessage({
+        companyId: params.companyId,
+        recipientPhone: params.to,
+        text: params.text,
+      });
+      return { success: true, providerRefId, error: null };
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'unknown whatsapp error';

@@ -27,15 +27,12 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
 import { PERM } from '../../common/auth/permission-keys';
-import { RolesGuard } from '../../common/guards/roles.guard';
-import { TenantRoles } from '../../common/decorators/tenant-roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 
 @ApiTags('Scheduling')
 @ApiCookieAuth('access_token')
-@UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
-@TenantRoles()
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('scheduling')
 export class SchedulingController {
   constructor(

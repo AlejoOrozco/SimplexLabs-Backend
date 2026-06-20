@@ -17,8 +17,6 @@ import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../../common/guards/permissions.guard';
 import { RequirePermissions } from '../../../common/decorators/require-permissions.decorator';
 import { PERM } from '../../../common/auth/permission-keys';
-import { RolesGuard } from '../../../common/guards/roles.guard';
-import { TenantRoles } from '../../../common/decorators/tenant-roles.decorator';
 import {
   CurrentUser,
   type AuthenticatedUser,
@@ -44,14 +42,13 @@ function assertId(raw: string): string {
 
 @ApiTags('Agent Knowledge Base')
 @ApiCookieAuth('access_token')
-@UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('agent-kb')
 export class AgentKbController {
   constructor(private readonly kb: AgentKbService) {}
 
   @RequirePermissions(PERM.platformAgentsView)
   @Get()
-  @TenantRoles()
   @ApiOperation({
     summary:
       'List KB entries. Supports `category`, `isActive`, and `search` (title/content).',
@@ -65,7 +62,6 @@ export class AgentKbController {
 
   @RequirePermissions(PERM.platformAgentsView)
   @Get(':id')
-  @TenantRoles()
   @ApiOperation({ summary: 'Get a KB entry by id (tenant-scoped).' })
   findOne(
     @Param('id') rawId: string,
@@ -77,7 +73,6 @@ export class AgentKbController {
   @RequirePermissions(PERM.platformAgentsManage)
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  @TenantRoles()
   @ApiOperation({ summary: 'Create a KB entry.' })
   create(
     @Body() dto: CreateAgentKbDto,
@@ -88,7 +83,6 @@ export class AgentKbController {
 
   @RequirePermissions(PERM.platformAgentsManage)
   @Put(':id')
-  @TenantRoles()
   @ApiOperation({
     summary:
       'Update a KB entry (title / content / category / isActive). PATCH semantics over PUT.',
@@ -104,7 +98,6 @@ export class AgentKbController {
   @RequirePermissions(PERM.platformAgentsManage)
   @Delete(':id')
   @HttpCode(HttpStatus.OK)
-  @TenantRoles()
   @ApiOperation({
     summary:
       'Soft-delete (deactivate) a KB entry. Idempotent. Use POST :id/reactivate to restore.',
@@ -119,7 +112,6 @@ export class AgentKbController {
   @RequirePermissions(PERM.platformAgentsManage)
   @Post(':id/reactivate')
   @HttpCode(HttpStatus.OK)
-  @TenantRoles()
   @ApiOperation({ summary: 'Reactivate a soft-deleted KB entry.' })
   reactivate(
     @Param('id') rawId: string,

@@ -18,8 +18,6 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
 import { PERM } from '../../common/auth/permission-keys';
-import { RolesGuard } from '../../common/guards/roles.guard';
-import { Roles } from '../../common/decorators/roles.decorator';
 import { FailedTaskService } from '../../common/reliability/failed-task.service';
 import {
   ABSOLUTE_MAX_PAGE_LIMIT,
@@ -56,10 +54,8 @@ class AbandonFailedTaskDto {
 /**
  * Dead-letter admin surface (Phase 8).
  *
- * Access is SUPER_ADMIN only: these endpoints can trigger replays of
- * cross-tenant side-effects (pipeline runs, notification delivery). A
- * tenant-scoped CLIENT must never reach this controller — we enforce
- * both the JWT guard and an explicit role check.
+ * Access requires `platform.admin.access`: these endpoints can trigger replays of
+ * cross-tenant side-effects (pipeline runs, notification delivery).
  *
  * Pagination is capped by the shared ceilings in
  * `common/http/pagination.ts`; the list endpoint ALWAYS returns a
@@ -68,8 +64,7 @@ class AbandonFailedTaskDto {
 @ApiTags('Admin · Reliability')
 @ApiCookieAuth('access_token')
 @Controller('admin/failed-tasks')
-@UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
-@Roles('SUPER_ADMIN')
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class FailedTasksController {
   constructor(
     private readonly failedTasks: FailedTaskService,

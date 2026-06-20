@@ -20,8 +20,6 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
 import { PERM } from '../../common/auth/permission-keys';
-import { RolesGuard } from '../../common/guards/roles.guard';
-import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import { CreateFullCompanyDto } from './dto/create-full-company.dto';
@@ -33,8 +31,7 @@ import { AdminClientDetailService } from './dashboard/admin-client-detail.servic
 @ApiTags('Admin · Companies')
 @ApiCookieAuth('access_token')
 @Controller('admin/companies')
-@UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
-@Roles('SUPER_ADMIN')
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class AdminCompaniesController {
   constructor(
     private readonly admin: AdminService,

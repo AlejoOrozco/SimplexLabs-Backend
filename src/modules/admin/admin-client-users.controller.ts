@@ -14,8 +14,6 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
 import { PERM } from '../../common/auth/permission-keys';
-import { RolesGuard } from '../../common/guards/roles.guard';
-import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import { AdminService } from './admin.service';
@@ -26,8 +24,7 @@ import { DeactivateClientDto } from './dto/deactivate-client.dto';
 @ApiTags('Admin · Client users')
 @ApiCookieAuth('access_token')
 @Controller('admin/users')
-@UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
-@Roles('SUPER_ADMIN')
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class AdminClientUsersController {
   constructor(private readonly admin: AdminService) {}
 

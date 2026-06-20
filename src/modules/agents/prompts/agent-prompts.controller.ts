@@ -16,8 +16,6 @@ import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../../common/guards/permissions.guard';
 import { RequirePermissions } from '../../../common/decorators/require-permissions.decorator';
 import { PERM } from '../../../common/auth/permission-keys';
-import { RolesGuard } from '../../../common/guards/roles.guard';
-import { TenantRoles } from '../../../common/decorators/tenant-roles.decorator';
 import {
   CurrentUser,
   type AuthenticatedUser,
@@ -37,14 +35,13 @@ const VALID_ROLES = new Set<AgentRole>(Object.values(AgentRole));
 
 @ApiTags('Agent Prompts')
 @ApiCookieAuth('access_token')
-@UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('agent-prompts')
 export class AgentPromptsController {
   constructor(private readonly agentPrompts: AgentPromptsService) {}
 
   @RequirePermissions(PERM.platformAgentsView)
   @Get()
-  @TenantRoles()
   @ApiOperation({
     summary:
       'List all 5 role prompts for the active AgentConfig. Missing roles are filled with read-only default placeholders; the first update persists a real row.',
@@ -58,7 +55,6 @@ export class AgentPromptsController {
 
   @RequirePermissions(PERM.platformAgentsManage)
   @Put(':role')
-  @TenantRoles()
   @ApiOperation({
     summary:
       'Update (or auto-create on first write) the prompt for a single role. Role is one of ANALYZER | RETRIEVER | DECIDER | EXECUTOR | RESPONDER.',

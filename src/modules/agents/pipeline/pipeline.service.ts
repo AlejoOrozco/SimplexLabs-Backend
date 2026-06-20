@@ -509,11 +509,11 @@ export class PipelineService {
         );
         return;
       }
-      await this.metaSender.sendWhatsappText(
-        context.companyId,
-        context.inbound.from,
+      await this.metaSender.sendTextMessage({
+        companyId: context.companyId,
+        recipientPhone: context.inbound.from,
         text,
-      );
+      });
     } catch (error) {
       this.logger.error(
         `Outbound send failed (message persisted) company=${context.companyId} to=${context.inbound.from}: ${describeError(error)}`,

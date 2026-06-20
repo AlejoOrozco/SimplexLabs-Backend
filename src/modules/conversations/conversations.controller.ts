@@ -17,8 +17,6 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
 import { PERM } from '../../common/auth/permission-keys';
-import { RolesGuard } from '../../common/guards/roles.guard';
-import { TenantRoles } from '../../common/decorators/tenant-roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import { ListConversationsQueryDto } from './dto/list-conversations.query';
@@ -32,7 +30,7 @@ import { SendHumanMessageDto } from './dto/send-human-message.dto';
 
 @ApiTags('Conversations')
 @ApiCookieAuth('access_token')
-@UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('conversations')
 export class ConversationsController {
   constructor(
@@ -74,7 +72,6 @@ export class ConversationsController {
 
   @RequirePermissions(PERM.companyConversationsManage)
   @Post(':id/takeover')
-  @TenantRoles()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Take manual control of a conversation (AGENT → HUMAN)',
@@ -88,7 +85,6 @@ export class ConversationsController {
 
   @RequirePermissions(PERM.companyConversationsManage)
   @Post(':id/handback')
-  @TenantRoles()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Hand control back to the agent (HUMAN → AGENT)',
@@ -102,7 +98,6 @@ export class ConversationsController {
 
   @RequirePermissions(PERM.companyConversationsManage)
   @Post(':id/messages')
-  @TenantRoles()
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
     summary:

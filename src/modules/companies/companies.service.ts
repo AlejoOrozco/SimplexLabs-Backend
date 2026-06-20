@@ -10,6 +10,7 @@ import { CreateCompanyDto } from './dto/create-company.dto';
 import { UpdateCompanyDto } from './dto/update-company.dto';
 import { CompanyResponseDto } from './dto/company-response.dto';
 import type { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
+import { isPlatformSuperAdmin } from '../../common/auth/user-role.util';
 import {
   applyCompanyDeactivate,
   COMPANY_DEACTIVATED_BY_ADMIN_DELETE,
@@ -69,10 +70,13 @@ export class CompaniesService {
   ): Promise<CompanyResponseDto> {
     await this.findOne(id, user);
 
-    const isSuperAdmin = user.roleName === 'SUPER_ADMIN';
+    const isPlatformAdmin = isPlatformSuperAdmin(
+      user,
+      user.isPlatformOwnerCompany,
+    );
 
     if (
-      isSuperAdmin &&
+      isPlatformAdmin &&
       (dto.whatsappPhoneNumberId?.trim() || dto.whatsappPhoneNumber?.trim())
     ) {
       this.logger.log(
@@ -84,7 +88,7 @@ export class CompaniesService {
     if (dto.name !== undefined) companyData.name = dto.name;
     if (dto.phone !== undefined) companyData.phone = dto.phone;
     if (dto.address !== undefined) companyData.address = dto.address;
-    if (isSuperAdmin && dto.niche !== undefined) {
+    if (isPlatformAdmin && dto.niche !== undefined) {
       companyData.niche = dto.niche;
     }
 
@@ -169,7 +173,7 @@ export class CompaniesService {
   }
 
   private assertAccess(companyId: string, user: AuthenticatedUser): void {
-    if (user.roleName === 'SUPER_ADMIN') return;
+    if (isPlatformSuperAdmin(user, user.isPlatformOwnerCompany)) return;
     if (user.companyId !== companyId) {
       throw new ForbiddenException('Access denied to this company');
     }

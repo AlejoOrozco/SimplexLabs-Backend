@@ -24,7 +24,7 @@ import { RejectAppointmentDto } from './dto/reject-appointment.dto';
 import { MarkCallbackHandledDto } from './dto/mark-callback-handled.dto';
 import { NotificationsService } from '../notifications/notifications.service';
 import { AttendeesService } from '../attendees/attendees.service';
-import { isSuperAdmin } from '../../common/auth/user-role.util';
+import { isPlatformSuperAdmin } from '../../common/auth/user-role.util';
 import type { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import {
   assertTenantAccess,
@@ -438,9 +438,9 @@ export class AppointmentsService {
     dto: MarkCallbackHandledDto,
     requester: AuthenticatedUser,
   ): Promise<AppointmentResponseDto> {
-    if (requester.roleName !== 'SUPER_ADMIN') {
+    if (!isPlatformSuperAdmin(requester, requester.isPlatformOwnerCompany)) {
       throw new ForbiddenException(
-        'Only SUPER_ADMIN may mark callbacks as handled.',
+        'Only platform operators may mark callbacks as handled.',
       );
     }
 
@@ -563,11 +563,11 @@ export class AppointmentsService {
       `Reply to this message if you need to reschedule.`;
 
     try {
-      await this.metaSender.sendWhatsappText(
-        appt.companyId,
-        contact.phone,
-        body,
-      );
+      await this.metaSender.sendTextMessage({
+        companyId: appt.companyId,
+        recipientPhone: contact.phone,
+        text: body,
+      });
     } catch (error) {
       this.logger.error(
         `Failed to send WhatsApp confirmation for appointment=${appt.id}: ${error instanceof Error ? error.message : String(error)}`,
@@ -629,7 +629,7 @@ export class AppointmentsService {
       }
     }
 
-    if (row.organizerId === requester.id || isSuperAdmin(requester)) {
+    if (row.organizerId === requester.id || isPlatformSuperAdmin(requester)) {
       return;
     }
 

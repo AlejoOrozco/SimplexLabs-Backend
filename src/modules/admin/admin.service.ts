@@ -8,7 +8,6 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
-  BillingCycle,
   NotificationType,
   PaymentMethod,
   PlanCategory,
@@ -21,11 +20,10 @@ import { SupabaseAdminService } from '../../common/supabase/supabase-admin.servi
 import { EmailService } from '../notifications/adapters/email.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import type { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
-import { isSuperAdmin } from '../../common/auth/user-role.util';
+import { isPlatformSuperAdmin } from '../../common/auth/user-role.util';
 import { CreateClientUserDto } from './dto/create-client-user.dto';
 import { CreateFullCompanyDto } from './dto/create-full-company.dto';
 import { CreateStaffUserDto } from './dto/create-staff-user.dto';
-import { CompleteOnboardingDto } from './dto/complete-onboarding.dto';
 import { SaveOnboardingDraftDto } from './dto/save-onboarding-draft.dto';
 import { SendOnboardingCredentialsDto } from './dto/send-onboarding-credentials.dto';
 import { DeactivateClientDto } from './dto/deactivate-client.dto';
@@ -44,16 +42,6 @@ import { AdminCompanyListRowDto } from './dto/admin-company-list-row.dto';
 export interface OnboardingDraftResponseDto {
   readonly step: number;
   readonly data: Record<string, unknown>;
-}
-
-export interface CompleteOnboardingResultDto {
-  readonly companyId: string;
-  readonly userId: string;
-  readonly email: string;
-  readonly password: string;
-  readonly firstName: string;
-  readonly lastName: string;
-  readonly companyName: string;
 }
 
 export interface CreateFullCompanyResultDto {
@@ -584,188 +572,6 @@ export class AdminService {
     }
   }
 
-  /**
-   * @deprecated Use {@link AdminService.createFullCompany} followed by
-   *   {@link AdminService.createClientUser} for the split company / user
-   *   wizards instead.
-   */
-  async completeOnboarding(
-    dto: CompleteOnboardingDto,
-    adminId: string,
-  ): Promise<CompleteOnboardingResultDto> {
-    this.assertCompanyPayload(dto);
-
-    const existingUser = await this.prisma.user.findUnique({
-      where: { email: dto.email },
-      select: { id: true },
-    });
-    if (existingUser) {
-      throw new ConflictException('Email already in use');
-    }
-
-    const plan = await this.prisma.plan.findFirst({
-      where: { id: dto.planId, isActive: true },
-      select: { id: true, category: true },
-    });
-    if (!plan) {
-      throw new NotFoundException(`Plan ${dto.planId} not found or inactive`);
-    }
-    if (!plan.category) {
-      throw new BadRequestException(
-        'Selected plan must have a product category before client onboarding',
-      );
-    }
-
-    const password = this.generateStrongPassword();
-    const supabase = this.supabaseAdmin.getClient();
-    const { data: authData, error: authErr } =
-      await supabase.auth.admin.createUser({
-        email: dto.email,
-        password,
-        email_confirm: true,
-      });
-
-    if (authErr || !authData.user) {
-      this.logger.error(
-        `Supabase createUser failed for ${dto.email}`,
-        authErr?.message,
-      );
-      throw new InternalServerErrorException('Failed to create auth account');
-    }
-
-    const supabaseUserId = authData.user.id;
-
-    const agentName = sanitizeSingleLineText(dto.agentName);
-    const fallbackMessage = sanitizeMultilineText(dto.fallbackMessage);
-    const escalationMessage = sanitizeMultilineText(dto.escalationMessage);
-    if (!agentName || !fallbackMessage || !escalationMessage) {
-      await this.safeDeleteSupabaseUser(supabaseUserId);
-      throw new BadRequestException(
-        'agentName, fallbackMessage, and escalationMessage must be non-empty after sanitization',
-      );
-    }
-
-    try {
-      const result = await this.prisma.$transaction(async (tx) => {
-        const company = await this.resolveOrCreateCompany(tx, dto);
-
-        if (
-          dto.whatsappPhoneNumberId?.trim() ||
-          dto.whatsappPhoneNumber?.trim()
-        ) {
-          this.logger.log(
-            'WhatsApp phone fields were provided; CompanyChannel rows still require a long-lived token via POST /channels.',
-          );
-        }
-
-        const stripeEnabled = dto.paymentMethods.includes(
-          PaymentMethod.STRIPE,
-        );
-        const wireEnabled = dto.paymentMethods.includes(
-          PaymentMethod.WIRE_TRANSFER,
-        );
-
-        await tx.companySettings.upsert({
-          where: { companyId: company.id },
-          create: {
-            companyId: company.id,
-            notificationEmail: dto.notificationEmail ?? null,
-            notificationWhatsapp: dto.notificationPhone ?? null,
-            stripeEnabled,
-            wireTransferEnabled: wireEnabled,
-          },
-          update: {
-            ...(dto.notificationEmail !== undefined
-              ? { notificationEmail: dto.notificationEmail }
-              : {}),
-            ...(dto.notificationPhone !== undefined
-              ? { notificationWhatsapp: dto.notificationPhone }
-              : {}),
-            stripeEnabled,
-            wireTransferEnabled: wireEnabled,
-          },
-        });
-
-        await tx.agentConfig.updateMany({
-          where: { companyId: company.id, isActive: true },
-          data: { isActive: false },
-        });
-
-        const user = await tx.user.create({
-          data: {
-            supabaseId: supabaseUserId,
-            email: dto.email,
-            firstName: dto.firstName,
-            lastName: dto.lastName,
-            role_name: 'CLIENT',
-            companyId: company.id,
-            credentialsSentAt: new Date(),
-          },
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-          },
-        });
-
-        await this.subscriptions.createWithinTransaction(
-          tx,
-          {
-            companyId: company.id,
-            planId: dto.planId,
-            billingCycle: BillingCycle.MONTHLY,
-            initialPayment: dto.initialPayment,
-            startedAt: dto.startedAt,
-          },
-          adminId,
-        );
-
-        const prompts = buildOnboardingAgentPromptCreates(
-          agentName,
-          company.name,
-        );
-
-        await tx.agentConfig.create({
-          data: {
-            companyId: company.id,
-            name: agentName,
-            isActive: true,
-            channels: dto.channels,
-            fallbackMessage,
-            escalationMessage,
-            language: 'es',
-            prompts: {
-              create: prompts,
-            },
-          },
-        });
-
-        return {
-          company,
-          user,
-          password,
-        };
-      });
-
-      this.logger.log(
-        `Admin onboarding completed adminUserId=${adminId} companyId=${result.company.id} newUserId=${result.user.id}`,
-      );
-
-      return {
-        companyId: result.company.id,
-        userId: result.user.id,
-        email: dto.email,
-        password: result.password,
-        firstName: result.user.firstName,
-        lastName: result.user.lastName,
-        companyName: result.company.name,
-      };
-    } catch (err) {
-      await this.safeDeleteSupabaseUser(supabaseUserId);
-      throw err;
-    }
-  }
-
   async sendOnboardingCredentials(
     dto: SendOnboardingCredentialsDto,
   ): Promise<{ sent: boolean }> {
@@ -814,7 +620,7 @@ export class AdminService {
     dto: DeactivateClientDto,
     requester: AuthenticatedUser,
   ): Promise<{ deactivated: true }> {
-    if (!isSuperAdmin(requester)) {
+    if (!isPlatformSuperAdmin(requester)) {
       throw new ForbiddenException('Only SUPER_ADMIN may deactivate clients');
     }
 
@@ -858,7 +664,7 @@ export class AdminService {
     userId: string,
     requester: AuthenticatedUser,
   ): Promise<{ reactivated: true }> {
-    if (!isSuperAdmin(requester)) {
+    if (!isPlatformSuperAdmin(requester)) {
       throw new ForbiddenException('Only SUPER_ADMIN may reactivate clients');
     }
 
@@ -890,7 +696,7 @@ export class AdminService {
     companyId: string,
     requester: AuthenticatedUser,
   ): Promise<{ reactivated: true; usersReactivated: number }> {
-    if (!isSuperAdmin(requester)) {
+    if (!isPlatformSuperAdmin(requester)) {
       throw new ForbiddenException('Only SUPER_ADMIN may reactivate companies');
     }
 
@@ -912,45 +718,6 @@ export class AdminService {
     });
 
     return { reactivated: true, usersReactivated };
-  }
-
-  private assertCompanyPayload(dto: CompleteOnboardingDto): void {
-    if (dto.companyId && (dto.companyName || dto.companyNiche)) {
-      throw new BadRequestException(
-        'Do not send companyName or companyNiche when companyId is set',
-      );
-    }
-    if (!dto.companyId && (!dto.companyName || !dto.companyNiche)) {
-      throw new BadRequestException(
-        'companyName and companyNiche are required when companyId is omitted',
-      );
-    }
-  }
-
-  private async resolveOrCreateCompany(
-    tx: Prisma.TransactionClient,
-    dto: CompleteOnboardingDto,
-  ): Promise<{ id: string; name: string }> {
-    if (dto.companyId) {
-      const existing = await tx.company.findUnique({
-        where: { id: dto.companyId },
-        select: { id: true, name: true },
-      });
-      if (!existing) {
-        throw new NotFoundException(`Company ${dto.companyId} not found`);
-      }
-      return existing;
-    }
-    const created = await tx.company.create({
-      data: {
-        name: dto.companyName!,
-        niche: dto.companyNiche!,
-        phone: dto.companyPhone ?? null,
-        address: dto.companyAddress ?? null,
-      },
-      select: { id: true, name: true },
-    });
-    return created;
   }
 
   private generateStrongPassword(): string {

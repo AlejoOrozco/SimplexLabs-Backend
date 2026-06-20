@@ -14,8 +14,6 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
 import { PERM } from '../../common/auth/permission-keys';
-import { RolesGuard } from '../../common/guards/roles.guard';
-import { TenantRoles } from '../../common/decorators/tenant-roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import { PaymentsService } from './payments.service';
@@ -26,14 +24,13 @@ import { PaymentResponseDto } from './dto/payment-response.dto';
 
 @ApiTags('Payments')
 @ApiCookieAuth('access_token')
-@UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('payments')
 export class PaymentsController {
   constructor(private readonly payments: PaymentsService) {}
 
   @RequirePermissions(PERM.companyPaymentsView)
   @Get()
-  @TenantRoles()
   @ApiOperation({ summary: 'List payments scoped to requester company.' })
   findAll(
     @CurrentUser() user: AuthenticatedUser,
@@ -43,7 +40,6 @@ export class PaymentsController {
 
   @RequirePermissions(PERM.companyPaymentsView)
   @Get(':id')
-  @TenantRoles()
   @ApiOperation({ summary: 'Get payment detail + event log.' })
   findOne(
     @Param('id', ParseUUIDPipe) id: string,
@@ -54,7 +50,6 @@ export class PaymentsController {
 
   @RequirePermissions(PERM.companyPaymentsManage)
   @Post('initiate')
-  @TenantRoles()
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
     summary:
@@ -69,7 +64,6 @@ export class PaymentsController {
 
   @RequirePermissions(PERM.companyPaymentsManage)
   @Post(':id/wire/screenshot')
-  @TenantRoles()
   @ApiOperation({
     summary:
       'Attach an uploaded wire-transfer screenshot URL. Transitions AWAITING_SCREENSHOT → PENDING_REVIEW.',
@@ -84,7 +78,6 @@ export class PaymentsController {
 
   @RequirePermissions(PERM.companyPaymentsManage)
   @Post(':id/wire/review')
-  @TenantRoles()
   @ApiOperation({
     summary:
       'Approve or reject a pending wire transfer payment. Only valid from PENDING_REVIEW.',

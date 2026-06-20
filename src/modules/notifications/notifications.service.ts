@@ -12,6 +12,7 @@ import {
 import { PrismaService } from '../../prisma/prisma.service';
 import { RealtimeService } from '../realtime/realtime.service';
 import type { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
+import { isPlatformSuperAdmin } from '../../common/auth/user-role.util';
 import { scopedCompanyWhere } from '../../common/tenant/tenant-scope';
 import { resolvePagination } from '../../common/http/pagination';
 import type { ListNotificationsQueryDto } from './dto/list-notifications-query.dto';
@@ -228,7 +229,10 @@ export class NotificationsService {
     // SUPER_ADMIN must explicitly call per-company to avoid accidentally
     // acknowledging every tenant's notifications at once. For a CLIENT,
     // scope enforces their companyId.
-    if (!scope.companyId && requester.roleName === 'SUPER_ADMIN') {
+    if (
+      !scope.companyId &&
+      isPlatformSuperAdmin(requester, requester.isPlatformOwnerCompany)
+    ) {
       throw new ForbiddenException(
         'SUPER_ADMIN mark-all-read requires an explicit companyId filter; use the per-notification endpoint instead.',
       );

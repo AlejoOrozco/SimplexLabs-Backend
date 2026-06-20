@@ -221,11 +221,11 @@ export class InactivityCloseJob {
 
     if (args.channel === Channel.WHATSAPP && args.recipientPhone) {
       try {
-        await this.metaSender.sendWhatsappText(
-          args.companyId,
-          args.recipientPhone,
-          closingText,
-        );
+        await this.metaSender.sendTextMessage({
+          companyId: args.companyId,
+          recipientPhone: args.recipientPhone,
+          text: closingText,
+        });
       } catch (error) {
         this.logger.warn(
           `Closing-message WhatsApp send failed conversation=${args.conversationId}: ${

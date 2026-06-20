@@ -15,9 +15,6 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
 import { PERM } from '../../common/auth/permission-keys';
-import { RolesGuard } from '../../common/guards/roles.guard';
-import { Roles } from '../../common/decorators/roles.decorator';
-import { TenantRoles } from '../../common/decorators/tenant-roles.decorator';
 import {
   CurrentUser,
   type AuthenticatedUser,
@@ -25,14 +22,13 @@ import {
 
 @ApiTags('Agents')
 @ApiCookieAuth('access_token')
-@UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('agents')
 export class AgentsController {
   constructor(private readonly agentsService: AgentsService) {}
 
-  @RequirePermissions(PERM.platformAgentsView)
+  @RequirePermissions(PERM.companyConversationsView)
   @Get('runs/conversation/:conversationId')
-  @TenantRoles()
   @ApiOperation({
     summary: 'List AgentRuns for a conversation (tenant-scoped, newest first)',
   })
@@ -48,9 +44,8 @@ export class AgentsController {
 
   @RequirePermissions(PERM.platformAgentsView)
   @Get('runs/failed')
-  @Roles('SUPER_ADMIN')
   @ApiOperation({
-    summary: 'List recent failed AgentRuns across all tenants (admin only)',
+    summary: 'List recent failed AgentRuns across all tenants (platform only)',
   })
   listRecentFailedRuns(
     @Query('limit', new DefaultValuePipe(50), ParseIntPipe) limit: number,

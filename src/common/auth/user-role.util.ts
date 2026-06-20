@@ -48,11 +48,6 @@ export function isPlatformSuperAdmin(
   return isPlatformOwnerCompany;
 }
 
-/** @deprecated Prefer isPlatformSuperAdmin for new code; kept for existing call sites during migration. */
-export function isSuperAdmin(requester: AuthenticatedUser): boolean {
-  return isPlatformSuperAdmin(requester);
-}
-
 export function isPlatformPrivilegedRole(roleName: string): boolean {
   return PLATFORM_PRIVILEGED_ROLES.has(roleName);
 }

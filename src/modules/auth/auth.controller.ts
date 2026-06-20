@@ -24,8 +24,6 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
 import { PERM } from '../../common/auth/permission-keys';
-import { RolesGuard } from '../../common/guards/roles.guard';
-import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import { getCookieValue } from '../../common/http/cookie.util';
@@ -72,9 +70,8 @@ export class AuthController {
 
   @Post('register')
   @HttpCode(HttpStatus.CREATED)
-  @UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
   @RequirePermissions(PERM.platformAdminAccess)
-  @Roles('SUPER_ADMIN')
   @ApiCookieAuth('access_token')
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @ApiOperation({

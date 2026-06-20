@@ -1,6 +1,5 @@
 import { Global, Module } from '@nestjs/common';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
-import { RolesGuard } from './guards/roles.guard';
 import { PermissionsGuard } from './guards/permissions.guard';
 import { EncryptionService } from './crypto/encryption.service';
 import { SupabaseAdminService } from './supabase/supabase-admin.service';
@@ -21,14 +20,12 @@ import { SupabaseAdminService } from './supabase/supabase-admin.service';
 @Module({
   providers: [
     JwtAuthGuard,
-    RolesGuard,
     PermissionsGuard,
     EncryptionService,
     SupabaseAdminService,
   ],
   exports: [
     JwtAuthGuard,
-    RolesGuard,
     PermissionsGuard,
     EncryptionService,
     SupabaseAdminService,
