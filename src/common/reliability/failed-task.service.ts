@@ -10,7 +10,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 export type FailedTaskType =
   | 'pipeline.run'
   | 'notification.delivery'
-  | 'meta.send';
+  | 'twilio.send';
 
 export interface RecordFailureParams {
   readonly companyId?: string | null;

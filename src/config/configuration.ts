@@ -55,12 +55,6 @@ export const configuration = () => ({
     expiresIn: process.env.JWT_EXPIRES_IN ?? '15m',
     refreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN ?? '7d',
   },
-  meta: {
-    webhookVerifyToken: process.env.META_WEBHOOK_VERIFY_TOKEN ?? '',
-    /** Meta app secret — used for X-Hub-Signature-256 verification on webhooks. */
-    appSecret: process.env.META_APP_SECRET ?? '',
-    apiVersion: process.env.META_API_VERSION ?? 'v19.0',
-  },
   dialog: {
     sandboxApiKey: process.env.DIALOG_SANDBOX_API_KEY ?? '',
     sandboxBaseUrl:
@@ -189,7 +183,6 @@ export const configuration = () => ({
 
 export type AppConfig = ReturnType<typeof configuration>;
 export type CookieConfig = AppConfig['cookie'];
-export type MetaConfig = AppConfig['meta'];
 export type DialogConfig = AppConfig['dialog'];
 export type SecurityConfig = AppConfig['security'];
 export type AgentsConfig = AppConfig['agents'];
@@ -205,9 +198,13 @@ export function assertRequiredConfig(cfg: AppConfig): void {
   const missing: string[] = [];
   if (!cfg.agents.openaiApiKey) missing.push('OPENAI_API_KEY');
   if (!cfg.agents.openaiModel) missing.push('OPENAI_MODEL');
-  if (!cfg.meta.appSecret) missing.push('META_APP_SECRET');
-  if (!cfg.meta.webhookVerifyToken) missing.push('META_WEBHOOK_VERIFY_TOKEN');
   if (!cfg.security.encryptionKey) missing.push('ENCRYPTION_KEY');
+  if (!cfg.twilio.accountSid) missing.push('TWILIO_ACCOUNT_SID');
+  if (!cfg.twilio.authToken) missing.push('TWILIO_AUTH_TOKEN');
+  if (!cfg.twilio.whatsappFrom) missing.push('TWILIO_WHATSAPP_FROM');
+  if (!cfg.twilio.webhookSkipSignature && !cfg.twilio.webhookBaseUrl) {
+    missing.push('TWILIO_WEBHOOK_BASE_URL');
+  }
   // Stripe is REQUIRED as of Phase 5 — the payments module refuses to
   // construct without a secret key. We also insist on a webhook secret
   // so signature verification cannot be silently disabled, and on

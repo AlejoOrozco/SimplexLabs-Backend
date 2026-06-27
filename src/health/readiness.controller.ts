@@ -30,7 +30,7 @@ interface ReadinessResponse {
  *   503 so the orchestrator stops sending traffic until the dependency
  *   recovers.
  *
- * We deliberately DO NOT probe external HTTP providers (OpenAI, Meta,
+ * We deliberately DO NOT probe external HTTP providers (OpenAI, Twilio,
  * Stripe) from this endpoint — their latency variability would cause
  * false negatives. The runbook covers those checks separately.
  */

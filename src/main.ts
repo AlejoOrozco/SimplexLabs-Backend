@@ -15,9 +15,9 @@ import { RealtimeIoAdapter } from './modules/realtime/realtime.adapter';
 async function bootstrap(): Promise<void> {
   assertRequiredConfig(configuration());
 
-  // rawBody: true lets us read `req.rawBody` on the Meta webhook guard so we
-  // can verify X-Hub-Signature-256 against the exact bytes Meta signed. Must
-  // happen at factory level — Nest otherwise discards the buffer after parse.
+  // rawBody: true preserves the request buffer for Stripe webhook signature
+  // verification. Must happen at factory level — Nest otherwise discards
+  // the buffer after parse.
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     rawBody: true,
   });
