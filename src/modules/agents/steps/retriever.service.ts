@@ -33,7 +33,7 @@ const MAX_STAFF = 10;
 
 /**
  * Deterministic data-gathering step. No LLM call. We keep scopes tight to
- * avoid large payloads leaking into Groq prompts:
+ * avoid large payloads leaking into LLM prompts:
  *  - KB: full-text ILIKE on title/content filtered by analyzer-detected
  *    keywords. Falls back to recent top-N when no keywords matched.
  *  - Products: name ILIKE on analyzed product entities; otherwise top active.

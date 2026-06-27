@@ -11,7 +11,7 @@ import {
 } from '@prisma/client';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { ConversationLifecycleService } from '../../conversations/conversation-lifecycle.service';
-import { MetaSenderService } from '../../webhooks/meta-sender.service';
+import { WhatsAppSenderService } from '../../webhooks/whatsapp-sender.service';
 import { RealtimeService } from '../../realtime/realtime.service';
 import {
   messageEventSelect,
@@ -55,7 +55,7 @@ export class InactivityCloseJob {
     config: ConfigService,
     private readonly scheduler: SchedulerRegistry,
     private readonly lifecycle: ConversationLifecycleService,
-    private readonly metaSender: MetaSenderService,
+    private readonly whatsappSender: WhatsAppSenderService,
     private readonly realtime: RealtimeService,
   ) {
     this.cfg = config.getOrThrow<NotificationsConfig>('notifications');
@@ -221,7 +221,7 @@ export class InactivityCloseJob {
 
     if (args.channel === Channel.WHATSAPP && args.recipientPhone) {
       try {
-        await this.metaSender.sendTextMessage({
+        await this.whatsappSender.sendTextMessage({
           companyId: args.companyId,
           recipientPhone: args.recipientPhone,
           text: closingText,

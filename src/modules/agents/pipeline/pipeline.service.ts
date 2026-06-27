@@ -7,7 +7,7 @@ import {
   SenderType,
 } from '@prisma/client';
 import { PrismaService } from '../../../prisma/prisma.service';
-import { MetaSenderService } from '../../webhooks/meta-sender.service';
+import { WhatsAppOutboundNotReadyError, WhatsAppSenderService } from '../../webhooks/whatsapp-sender.service';
 import { RealtimeService } from '../../realtime/realtime.service';
 import { NotificationsService } from '../../notifications/notifications.service';
 import {
@@ -39,7 +39,7 @@ interface StepLog {
  *   3. Persist a single `AgentRun` row with per-step input/output, aggregate
  *      tokens, duration, success flag and error message.
  *   4. On success with non-empty responder text: persist outbound `Message`,
- *      link it to the AgentRun, send via Meta, update conversation timestamps.
+ *      link it to the AgentRun, send via Twilio, update conversation timestamps.
  *   5. On any failure: persist a failed `AgentRun`, send the company's
  *      configured fallback message (best-effort, non-blocking).
  *
@@ -59,7 +59,7 @@ export class PipelineService {
     private readonly decider: DeciderService,
     private readonly executor: ExecutorService,
     private readonly responder: ResponderService,
-    private readonly metaSender: MetaSenderService,
+    private readonly whatsappSender: WhatsAppSenderService,
     private readonly realtime: RealtimeService,
     private readonly notifications: NotificationsService,
   ) {}
@@ -91,6 +91,61 @@ export class PipelineService {
         skipped: true,
         skipReason: 'conversation_in_human_mode',
       };
+    }
+
+    // -------------------------------------------------------------------
+    // WhatsApp preflight: validate Twilio auth BEFORE any OpenAI calls.
+    // If credentials are wrong/missing, skip the pipeline entirely so we
+    // don't burn tokens on a reply that can never be delivered.
+    // -------------------------------------------------------------------
+    if (context.channel === Channel.WHATSAPP) {
+      try {
+        await this.whatsappSender.assertOutboundReady(context.companyId);
+      } catch (error) {
+        const reason =
+          error instanceof WhatsAppOutboundNotReadyError
+            ? error.message
+            : error instanceof Error
+              ? error.message
+              : 'whatsapp_outbound_not_ready';
+        const durationMs = Date.now() - startedAt;
+
+        this.logger.error(
+          `Pipeline SKIPPED (WhatsApp outbound not ready) message=${context.messageId} company=${context.companyId}: ${reason}`,
+        );
+
+        await this.prisma.agentRun.create({
+          data: {
+            conversationId: context.conversationId,
+            messageId: context.messageId,
+            analyzerInput: Prisma.JsonNull,
+            analyzerOutput: Prisma.JsonNull,
+            retrieverInput: Prisma.JsonNull,
+            retrieverOutput: Prisma.JsonNull,
+            deciderInput: Prisma.JsonNull,
+            deciderOutput: Prisma.JsonNull,
+            executorInput: Prisma.JsonNull,
+            executorOutput: Prisma.JsonNull,
+            responderInput: Prisma.JsonNull,
+            responderOutput: Prisma.JsonNull,
+            totalTokens: 0,
+            durationMs,
+            success: false,
+            error: `skipped: ${reason}`.slice(0, 2000),
+          },
+        });
+
+        return {
+          success: false,
+          error: reason,
+          totalTokens: 0,
+          durationMs,
+          responderText: null,
+          outboundMessageId: null,
+          skipped: true,
+          skipReason: 'whatsapp_outbound_not_ready',
+        };
+      }
     }
 
     const runPayload: Prisma.AgentRunUncheckedCreateInput = {
@@ -509,7 +564,7 @@ export class PipelineService {
         );
         return;
       }
-      await this.metaSender.sendTextMessage({
+      await this.whatsappSender.sendTextMessage({
         companyId: context.companyId,
         recipientPhone: context.inbound.from,
         text,

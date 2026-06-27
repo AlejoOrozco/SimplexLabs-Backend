@@ -14,7 +14,7 @@ import { InactivityCloseJob } from './scheduler/inactivity-close.job';
  * Wiring summary:
  *   - RealtimeModule → emit `notification.created`.
  *   - ConversationsModule → lifecycle transitions (close paths).
- *   - WebhooksModule (forwardRef) → MetaSenderService for WhatsApp fallback.
+ *   - WebhooksModule (forwardRef) → WhatsAppSenderService for WhatsApp fallback.
  *
  * The `OnModuleInit` hook registers the inactivity cron AFTER the DI
  * graph is fully assembled, so the job never races module bootstrap.

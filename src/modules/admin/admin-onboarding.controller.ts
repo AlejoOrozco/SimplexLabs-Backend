@@ -52,7 +52,8 @@ export class AdminOnboardingController {
   @Post('send-credentials')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'Email portal credentials (uses configured SMTP / provider)',
+    summary:
+      'Email portal credentials to a CLIENT or COMPANY_ADMIN user (Resend / SMTP)',
   })
   sendCredentials(@Body() dto: SendOnboardingCredentialsDto) {
     return this.admin.sendOnboardingCredentials(dto);

@@ -91,18 +91,45 @@ export const configuration = () => ({
     encryptionKey: process.env.ENCRYPTION_KEY ?? '',
   },
   agents: {
-    /** Groq inference API key. Required at startup. */
-    groqApiKey: process.env.GROQ_API_KEY ?? '',
-    /** Default Groq model for all pipeline steps. Overridable per-prompt. */
-    groqModel: process.env.GROQ_MODEL ?? 'llama-3.3-70b-versatile',
-    groqBaseUrl:
-      process.env.GROQ_BASE_URL ?? 'https://api.groq.com/openai/v1',
-    /** Per-step HTTP timeout for Groq calls. */
-    groqTimeoutMs: parseInt10(process.env.GROQ_TIMEOUT_MS, 30_000),
+    /** OpenAI API key. Required at startup. */
+    openaiApiKey: process.env.OPENAI_API_KEY ?? '',
+    /** Default OpenAI model for pipeline steps. Overridable per-prompt. */
+    openaiModel: process.env.OPENAI_MODEL ?? 'gpt-4o-mini',
+    openaiBaseUrl:
+      process.env.OPENAI_BASE_URL ?? 'https://api.openai.com/v1',
+    /** Per-step HTTP timeout for OpenAI calls. */
+    openaiTimeoutMs: parseInt10(process.env.OPENAI_TIMEOUT_MS, 30_000),
     /** How many recent conversation messages the retriever reads. */
     retrieverMessageWindow: parseInt10(process.env.RETRIEVER_WINDOW, 12),
     /** Global default temperature fallback when a prompt has none. */
     defaultTemperature: parseFloatSafe(process.env.AGENT_DEFAULT_TEMPERATURE, 0.3),
+    /**
+     * When true, inbound WhatsApp messages trigger the agent pipeline even
+     * when NODE_ENV !== production. Required for Twilio sandbox testing.
+     */
+    runPipelineInDev: parseBool(process.env.AGENT_PIPELINE_IN_DEV, false),
+  },
+  twilio: {
+    accountSid: process.env.TWILIO_ACCOUNT_SID ?? '',
+    authToken: process.env.TWILIO_AUTH_TOKEN ?? '',
+    /**
+     * Default outbound WhatsApp sender, e.g. `whatsapp:+14155238886`.
+     * Used when no per-company CompanyChannel row exists.
+     */
+    whatsappFrom: process.env.TWILIO_WHATSAPP_FROM ?? '',
+    /**
+     * Public API base URL used for Twilio webhook signature validation,
+     * e.g. `https://api.simplexlabs.org`. Must NOT include a trailing slash.
+     */
+    webhookBaseUrl: (process.env.TWILIO_WEBHOOK_BASE_URL ?? '').replace(
+      /\/$/,
+      '',
+    ),
+    /** Local/ngrok only — never enable in production. */
+    webhookSkipSignature: parseBool(
+      process.env.TWILIO_WEBHOOK_SKIP_SIGNATURE,
+      false,
+    ),
   },
   stripe: {
     secretKey: process.env.STRIPE_SECRET_KEY ?? '',
@@ -120,15 +147,16 @@ export const configuration = () => ({
   },
   email: {
     /**
-     * `smtp` wires the Phase 6 email fallback via nodemailer. `none` keeps
-     * the pipeline working in-app-only (WhatsApp still attempted when
-     * configured) — notifications never hard-fail because email is
-     * unavailable.
+     * `resend` — Resend HTTP API (recommended).
+     * `smtp` — generic SMTP via nodemailer (e.g. Resend SMTP relay).
+     * `none` — in-app + WhatsApp only; email fallback disabled.
      */
     provider: (process.env.EMAIL_PROVIDER ?? 'none').toLowerCase() as
+      | 'resend'
       | 'smtp'
       | 'none',
     from: process.env.EMAIL_FROM ?? '',
+    resendApiKey: process.env.RESEND_API_KEY ?? '',
     smtp: {
       host: process.env.EMAIL_SMTP_HOST ?? '',
       port: parseInt10(process.env.EMAIL_SMTP_PORT, 587),
@@ -165,6 +193,7 @@ export type MetaConfig = AppConfig['meta'];
 export type DialogConfig = AppConfig['dialog'];
 export type SecurityConfig = AppConfig['security'];
 export type AgentsConfig = AppConfig['agents'];
+export type TwilioConfig = AppConfig['twilio'];
 export type EmailConfig = AppConfig['email'];
 export type NotificationsConfig = AppConfig['notifications'];
 
@@ -174,8 +203,8 @@ export type NotificationsConfig = AppConfig['notifications'];
  */
 export function assertRequiredConfig(cfg: AppConfig): void {
   const missing: string[] = [];
-  if (!cfg.agents.groqApiKey) missing.push('GROQ_API_KEY');
-  if (!cfg.agents.groqModel) missing.push('GROQ_MODEL');
+  if (!cfg.agents.openaiApiKey) missing.push('OPENAI_API_KEY');
+  if (!cfg.agents.openaiModel) missing.push('OPENAI_MODEL');
   if (!cfg.meta.appSecret) missing.push('META_APP_SECRET');
   if (!cfg.meta.webhookVerifyToken) missing.push('META_WEBHOOK_VERIFY_TOKEN');
   if (!cfg.security.encryptionKey) missing.push('ENCRYPTION_KEY');
@@ -189,9 +218,12 @@ export function assertRequiredConfig(cfg: AppConfig): void {
   if (!cfg.stripe.successUrl) missing.push('STRIPE_SUCCESS_URL');
   if (!cfg.stripe.cancelUrl) missing.push('STRIPE_CANCEL_URL');
   // Email fallback is OPTIONAL. In-app and WhatsApp channels are always
-  // available. But if the operator picks `EMAIL_PROVIDER=smtp`, all SMTP
-  // credentials + a from address MUST be set — otherwise we'd silently
-  // drop email fallback, defeating the point.
+  // available. But if the operator picks a provider, required credentials
+  // MUST be set — otherwise we'd silently drop email fallback.
+  if (cfg.email.provider === 'resend') {
+    if (!cfg.email.from) missing.push('EMAIL_FROM');
+    if (!cfg.email.resendApiKey) missing.push('RESEND_API_KEY');
+  }
   if (cfg.email.provider === 'smtp') {
     if (!cfg.email.from) missing.push('EMAIL_FROM');
     if (!cfg.email.smtp.host) missing.push('EMAIL_SMTP_HOST');

@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { MetaSenderService } from '../../webhooks/meta-sender.service';
+import { WhatsAppSenderService } from '../../webhooks/whatsapp-sender.service';
 
 export interface WhatsappNotifySendParams {
   readonly companyId: string;
@@ -14,7 +14,7 @@ export interface WhatsappNotifySendResult {
 }
 
 /**
- * Thin, notification-shaped wrapper over `MetaSenderService`.
+ * Thin, notification-shaped wrapper over `WhatsAppSenderService`.
  *
  * Exists so NotificationsService never talks to Meta directly — the same
  * deterministic `{ success, providerRefId, error }` shape is returned by
@@ -28,7 +28,7 @@ export interface WhatsappNotifySendResult {
 export class WhatsappNotificationAdapter {
   private readonly logger = new Logger(WhatsappNotificationAdapter.name);
 
-  constructor(private readonly meta: MetaSenderService) {}
+  constructor(private readonly whatsapp: WhatsAppSenderService) {}
 
   async send(
     params: WhatsappNotifySendParams,
@@ -41,7 +41,7 @@ export class WhatsappNotificationAdapter {
       };
     }
     try {
-      const providerRefId = await this.meta.sendTextMessage({
+      const providerRefId = await this.whatsapp.sendTextMessage({
         companyId: params.companyId,
         recipientPhone: params.to,
         text: params.text,

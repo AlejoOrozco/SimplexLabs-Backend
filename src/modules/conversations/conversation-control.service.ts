@@ -15,7 +15,7 @@ import {
 import { PrismaService } from '../../prisma/prisma.service';
 import type { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import { assertTenantAccess } from '../../common/tenant/tenant-scope';
-import { MetaSenderService } from '../webhooks/meta-sender.service';
+import { WhatsAppSenderService } from '../webhooks/whatsapp-sender.service';
 import { RealtimeService } from '../realtime/realtime.service';
 import {
   conversationEventSelect,
@@ -39,7 +39,7 @@ export class ConversationControlService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly metaSender: MetaSenderService,
+    private readonly whatsappSender: WhatsAppSenderService,
     private readonly realtime: RealtimeService,
   ) {}
 
@@ -267,7 +267,7 @@ export class ConversationControlService {
     // initiated and retryable at the UI level; the rare "sent but not
     // persisted" case surfaces as a log-only inconsistency we'll smooth
     // over in Phase 4's message-status reconciliation.
-    const sentMessageId = await this.metaSender.sendTextMessage({
+    const sentMessageId = await this.whatsappSender.sendTextMessage({
       companyId: convo.companyId,
       recipientPhone: convo.contact.phone,
       text: content,

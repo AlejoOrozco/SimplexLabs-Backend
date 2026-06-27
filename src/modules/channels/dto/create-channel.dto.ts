@@ -17,16 +17,16 @@ export class CreateChannelDto {
 
   /**
    * Provider external id used by inbound webhooks to identify this channel.
-   * For WhatsApp this is the `phone_number_id` from the Meta console.
+   * For Twilio WhatsApp: the sender number in `whatsapp:+E164` form.
    */
-  @ApiProperty({ example: '1089903084203607' })
+  @ApiProperty({ example: 'whatsapp:+14155238886' })
   @IsString()
   @MinLength(1)
   @MaxLength(128)
   externalId!: string;
 
   @ApiPropertyOptional({
-    description: 'Optional WhatsApp Business Account id (WABA).',
+    description: 'Optional Twilio Account SID (defaults to TWILIO_ACCOUNT_SID).',
   })
   @IsOptional()
   @IsString()
@@ -34,7 +34,7 @@ export class CreateChannelDto {
   businessAccountId?: string;
 
   /**
-   * Provider access token. Written encrypted; never returned in responses.
+   * Provider auth token. For Twilio: Auth Token. Stored encrypted.
    */
   @ApiProperty({
     description: 'Long-lived provider access token. Stored encrypted.',

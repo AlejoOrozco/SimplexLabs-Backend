@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import {
-  GroqCompletionResult,
-  GroqService,
-} from '../providers/groq.service';
+  LlmCompletionResult,
+  OpenAiCompletionService,
+} from '../providers/openai-completion.service';
 import type { ResolvedPrompt } from '../prompts/prompt-resolver.service';
 import {
   DECIDER_ACTIONS,
@@ -41,14 +41,14 @@ export interface DeciderStepResult {
   };
   output: DeciderOutput;
   raw: string;
-  completion: GroqCompletionResult;
+  completion: LlmCompletionResult;
 }
 
 const VALID_ACTIONS = new Set<DeciderAction>(DECIDER_ACTIONS);
 
 @Injectable()
 export class DeciderService {
-  constructor(private readonly groq: GroqService) {}
+  constructor(private readonly llm: OpenAiCompletionService) {}
 
   async run(input: DeciderStepInput): Promise<DeciderStepResult> {
     const payload = {
@@ -71,7 +71,7 @@ export class DeciderService {
     };
 
     const userMessage = JSON.stringify(payload);
-    const completion = await this.groq.complete({
+    const completion = await this.llm.complete({
       systemPrompt: input.prompt.systemPrompt,
       userMessage,
       model: input.prompt.model,

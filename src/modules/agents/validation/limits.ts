@@ -38,12 +38,12 @@ export const TEMPERATURE_MAX = 2;
 export const MAX_TOKENS_MIN = 1;
 export const MAX_TOKENS_MAX = 4_096;
 
-/** Whitelist of provider models a client can pick. */
+/** Whitelist of OpenAI models a client can pick per AgentPrompt role. */
 export const SUPPORTED_MODELS = [
-  'llama-3.3-70b-versatile',
-  'llama-3.1-8b-instant',
-  'mixtral-8x7b-32768',
-  'gemma2-9b-it',
+  'gpt-4o-mini',
+  'gpt-4o',
+  'gpt-4.1-mini',
+  'gpt-4.1',
 ] as const;
 export type SupportedModel = (typeof SUPPORTED_MODELS)[number];
 

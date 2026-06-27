@@ -3,6 +3,23 @@ import { AgentRole, Channel, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { DEFAULT_PROMPTS } from './default-prompts';
 
+/** Groq model ids stored in legacy AgentPrompt rows — mapped at resolve time. */
+const LEGACY_GROQ_MODELS = new Set([
+  'llama-3.3-70b-versatile',
+  'llama-3.1-8b-instant',
+  'mixtral-8x7b-32768',
+  'gemma2-9b-it',
+]);
+
+const DEFAULT_MODEL_BY_ROLE = new Map(
+  DEFAULT_PROMPTS.map((prompt) => [prompt.role, prompt.model]),
+);
+
+function normalizeModel(role: AgentRole, model: string): string {
+  if (!LEGACY_GROQ_MODELS.has(model)) return model;
+  return DEFAULT_MODEL_BY_ROLE.get(role) ?? 'gpt-4o-mini';
+}
+
 const resolvedPromptSelect = {
   id: true,
   role: true,
@@ -108,7 +125,7 @@ export class PromptResolverService {
           source: 'database',
           role: match.role,
           systemPrompt: match.systemPrompt,
-          model: match.model,
+          model: normalizeModel(match.role, match.model),
           temperature: match.temperature,
           maxTokens: match.maxTokens,
         };

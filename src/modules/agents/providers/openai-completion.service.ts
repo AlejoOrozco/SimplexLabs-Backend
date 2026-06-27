@@ -5,23 +5,20 @@ import type { AgentsConfig } from '../../../config/configuration';
 import { RetryPolicyService } from '../../../common/reliability/retry-policy.service';
 import { classifyLlmError } from '../../../common/reliability/retry-classifiers';
 
-/**
- * OpenAI-compatible Groq chat completion request shape (subset).
- */
-interface GroqChatMessage {
+interface OpenAiChatMessage {
   role: 'system' | 'user' | 'assistant';
   content: string;
 }
 
-interface GroqRequestBody {
+interface OpenAiRequestBody {
   model: string;
-  messages: GroqChatMessage[];
+  messages: OpenAiChatMessage[];
   temperature: number;
   max_tokens: number;
   response_format?: { type: 'json_object' };
 }
 
-interface GroqResponse {
+interface OpenAiResponse {
   choices: Array<{
     index: number;
     message: { role: string; content: string };
@@ -36,21 +33,20 @@ interface GroqResponse {
   id: string;
 }
 
-export interface GroqCompletionOptions {
+export interface LlmCompletionOptions {
   systemPrompt: string;
   userMessage: string;
   model?: string;
   temperature: number;
   maxTokens: number;
   /**
-   * When true, sets OpenAI-compatible `response_format: { type: 'json_object' }`
-   * and the returned content is guaranteed by Groq to be syntactically valid
-   * JSON. Callers still validate schema via their own parsers.
+   * When true, sets OpenAI `response_format: { type: 'json_object' }`.
+   * Callers still validate schema via their own parsers.
    */
   expectJson: boolean;
 }
 
-export interface GroqCompletionResult {
+export interface LlmCompletionResult {
   content: string;
   model: string;
   tokens: {
@@ -62,25 +58,25 @@ export interface GroqCompletionResult {
   finishReason: string;
 }
 
-export class GroqApiError extends Error {
+export class LlmApiError extends Error {
   constructor(
     message: string,
     readonly status: number | null,
     readonly code: string | null,
   ) {
     super(message);
-    this.name = 'GroqApiError';
+    this.name = 'LlmApiError';
   }
 }
 
 /**
- * Thin, strongly-typed wrapper around the Groq chat completions endpoint
- * (OpenAI-compatible). Stateless per call. Every completion logs duration +
- * token usage so the pipeline orchestrator can aggregate them into AgentRun.
+ * Thin, strongly-typed wrapper around the OpenAI chat completions endpoint.
+ * Stateless per call. Every completion logs duration + token usage so the
+ * pipeline orchestrator can aggregate them into AgentRun.
  */
 @Injectable()
-export class GroqService {
-  private readonly logger = new Logger(GroqService.name);
+export class OpenAiCompletionService {
+  private readonly logger = new Logger(OpenAiCompletionService.name);
   private readonly http: AxiosInstance;
   private readonly defaultModel: string;
 
@@ -89,25 +85,24 @@ export class GroqService {
     private readonly retry: RetryPolicyService,
   ) {
     const agents = config.getOrThrow<AgentsConfig>('agents');
-    this.defaultModel = agents.groqModel;
+    this.defaultModel = agents.openaiModel;
 
     this.http = axios.create({
-      baseURL: agents.groqBaseUrl,
-      timeout: agents.groqTimeoutMs,
+      baseURL: agents.openaiBaseUrl,
+      timeout: agents.openaiTimeoutMs,
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${agents.groqApiKey}`,
+        Authorization: `Bearer ${agents.openaiApiKey}`,
       },
     });
   }
 
   /**
    * Perform a chat completion. Callers should pick `expectJson: true` for
-   * structured steps (analyzer / decider / executor) and `false` for the
-   * responder.
+   * structured steps (analyzer / decider) and `false` for the responder.
    */
-  async complete(options: GroqCompletionOptions): Promise<GroqCompletionResult> {
-    const body: GroqRequestBody = {
+  async complete(options: LlmCompletionOptions): Promise<LlmCompletionResult> {
+    const body: OpenAiRequestBody = {
       model: options.model ?? this.defaultModel,
       messages: [
         { role: 'system', content: options.systemPrompt },
@@ -124,21 +119,21 @@ export class GroqService {
     try {
       const retried = await this.retry.run(
         {
-          operation: `groq.complete(${body.model})`,
+          operation: `openai.complete(${body.model})`,
           maxAttempts: 3,
           baseDelayMs: 500,
           maxDelayMs: 4_000,
           classify: classifyLlmError,
         },
         async () => {
-          const response = await this.http.post<GroqResponse>(
+          const response = await this.http.post<OpenAiResponse>(
             '/chat/completions',
             body,
           );
           const choice = response.data.choices[0];
           if (!choice) {
-            throw new GroqApiError(
-              'Groq returned no choices in completion response',
+            throw new LlmApiError(
+              'OpenAI returned no choices in completion response',
               response.status,
               'no_choices',
             );
@@ -170,21 +165,21 @@ export class GroqService {
         const status = axErr.response?.status ?? null;
         const apiError = axErr.response?.data?.error;
         const message =
-          apiError?.message ?? axErr.message ?? 'Groq request failed';
+          apiError?.message ?? axErr.message ?? 'OpenAI request failed';
         const code = apiError?.code ?? apiError?.type ?? null;
         this.logger.error(
-          `Groq call failed after ${durationMs}ms status=${status ?? 'n/a'} code=${code ?? 'n/a'} model=${body.model}: ${message}`,
+          `OpenAI call failed after ${durationMs}ms status=${status ?? 'n/a'} code=${code ?? 'n/a'} model=${body.model}: ${message}`,
         );
-        throw new GroqApiError(message, status, code);
+        throw new LlmApiError(message, status, code);
       }
-      if (error instanceof GroqApiError) throw error;
+      if (error instanceof LlmApiError) throw error;
       if (error instanceof Error) {
         this.logger.error(
-          `Groq call failed after ${durationMs}ms model=${body.model}: ${error.message}`,
+          `OpenAI call failed after ${durationMs}ms model=${body.model}: ${error.message}`,
         );
-        throw new GroqApiError(error.message, null, null);
+        throw new LlmApiError(error.message, null, null);
       }
-      throw new GroqApiError('Unknown Groq error', null, null);
+      throw new LlmApiError('Unknown OpenAI error', null, null);
     }
   }
 }

@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import {
-  GroqCompletionResult,
-  GroqService,
-} from '../providers/groq.service';
+  LlmCompletionResult,
+  OpenAiCompletionService,
+} from '../providers/openai-completion.service';
 import type { ResolvedPrompt } from '../prompts/prompt-resolver.service';
 import type {
   AnalyzedLanguage,
@@ -33,14 +33,14 @@ export interface ResponderStepResult {
   };
   output: ResponderOutput;
   raw: string;
-  completion: GroqCompletionResult;
+  completion: LlmCompletionResult;
 }
 
 const MIN_REPLY_LEN = 2;
 
 @Injectable()
 export class ResponderService {
-  constructor(private readonly groq: GroqService) {}
+  constructor(private readonly llm: OpenAiCompletionService) {}
 
   async run(input: ResponderStepInput): Promise<ResponderStepResult> {
     const payload = {
@@ -110,7 +110,7 @@ export class ResponderService {
     };
 
     const userMessage = JSON.stringify(payload);
-    const completion = await this.groq.complete({
+    const completion = await this.llm.complete({
       systemPrompt: input.prompt.systemPrompt,
       userMessage,
       model: input.prompt.model,

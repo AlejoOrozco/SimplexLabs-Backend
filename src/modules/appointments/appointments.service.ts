@@ -36,7 +36,7 @@ import {
   toAppointmentResponse,
   type AppointmentWithRelations,
 } from './appointment.mapper';
-import { MetaSenderService } from '../webhooks/meta-sender.service';
+import { WhatsAppSenderService } from '../webhooks/whatsapp-sender.service';
 import { ConversationLifecycleService } from '../conversations/conversation-lifecycle.service';
 import { RealtimeService } from '../realtime/realtime.service';
 import {
@@ -50,7 +50,7 @@ export class AppointmentsService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly metaSender: MetaSenderService,
+    private readonly whatsappSender: WhatsAppSenderService,
     private readonly lifecycle: ConversationLifecycleService,
     private readonly realtime: RealtimeService,
     private readonly notifications: NotificationsService,
@@ -563,7 +563,7 @@ export class AppointmentsService {
       `Reply to this message if you need to reschedule.`;
 
     try {
-      await this.metaSender.sendTextMessage({
+      await this.whatsappSender.sendTextMessage({
         companyId: appt.companyId,
         recipientPhone: contact.phone,
         text: body,

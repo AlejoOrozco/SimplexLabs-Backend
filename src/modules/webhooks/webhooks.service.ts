@@ -14,8 +14,8 @@ import { PipelineService } from '../agents/pipeline/pipeline.service';
 import { RealtimeService } from '../realtime/realtime.service';
 import { WebhookDedupeService } from '../../common/reliability/webhook-dedupe.service';
 import { FailedTaskService } from '../../common/reliability/failed-task.service';
-import { MetaSenderService } from './meta-sender.service';
-import type { DialogConfig } from '../../config/configuration';
+import { WhatsAppSenderService } from './whatsapp-sender.service';
+import type { AgentsConfig, DialogConfig } from '../../config/configuration';
 import {
   logContext,
   runWithExtendedContext,
@@ -52,6 +52,16 @@ const NON_TEXT_CONTENT = {
   button: '[Button reply received]',
 } as const;
 
+export interface IngestWhatsAppInboundParams {
+  provider: 'meta' | 'twilio';
+  providerEventId: string;
+  companyId: string;
+  from: string;
+  content: string;
+  metadata: Prisma.InputJsonValue;
+  sentAt: Date;
+}
+
 @Injectable()
 export class WebhooksService {
   private readonly logger = new Logger(WebhooksService.name);
@@ -64,7 +74,7 @@ export class WebhooksService {
     private readonly realtime: RealtimeService,
     private readonly dedupe: WebhookDedupeService,
     private readonly failedTasks: FailedTaskService,
-    private readonly metaSenderService: MetaSenderService,
+    private readonly whatsappSender: WhatsAppSenderService,
   ) {}
 
   /**
@@ -162,89 +172,93 @@ export class WebhooksService {
       }
 
       for (const message of value.messages) {
-        await this.handleIncomingMessage(company.id, channel, message);
+        await this.handleIncomingMessage(company.id, message);
       }
     }
   }
 
   private async handleIncomingMessage(
     companyId: string,
-    channel: Channel,
     message: MetaMessage,
   ): Promise<void> {
-    // Phase 8 idempotency choke-point. CLAIM-OR-SKIP on the dedicated
-    // `webhook_events` table: a concurrent retry loses the unique-index
-    // race and short-circuits before any business write. This replaces
-    // the previous app-level `findFirst` which had a race window.
-    const providerKey = `meta:${channel.toLowerCase()}`;
-    const claim = await this.dedupe.claim({
-      provider: providerKey,
+    const { content, metadata } = this.extractMessageBody(message);
+    await this.ingestWhatsAppInbound({
+      provider: 'meta',
       providerEventId: message.id,
       companyId,
+      from: message.from,
+      content,
+      metadata,
+      sentAt: metaTimestampToDate(message.timestamp),
+    });
+  }
+
+  /**
+   * Shared choke-point for WhatsApp inbound events (Meta or Twilio).
+   * Handles dedupe, contact/conversation persistence, realtime emits,
+   * and agent-pipeline dispatch.
+   */
+  async ingestWhatsAppInbound(params: IngestWhatsAppInboundParams): Promise<void> {
+    const providerKey = `${params.provider}:whatsapp`;
+    const claim = await this.dedupe.claim({
+      provider: providerKey,
+      providerEventId: params.providerEventId,
+      companyId: params.companyId,
     });
     if (!claim.claimed) {
       this.logger.log(
-        `Duplicate inbound meta_id=${message.id} provider=${providerKey} — claim skipped (existing=${claim.existingId})`,
+        `Duplicate inbound provider_event=${params.providerEventId} provider=${providerKey} — claim skipped (existing=${claim.existingId})`,
       );
       return;
     }
 
     try {
       const contact = await this.findOrCreateContact(
-        companyId,
-        channel,
-        message.from,
+        params.companyId,
+        Channel.WHATSAPP,
+        params.from,
       );
 
       const conversation = await this.findOrCreateOpenConversation(
-        companyId,
+        params.companyId,
         contact.id,
-        channel,
+        Channel.WHATSAPP,
       );
 
-      const { content, metadata } = this.extractMessageBody(message);
-      // When the new conversation was opened because the previous one was
-      // CLOSED, we stamp the pointer on the FIRST inbound message so
-      // downstream phases can walk the history without a schema change.
       const enrichedMetadata =
         conversation.created && conversation.previousConversationId
           ? toJsonValue({
-              ...(metadata as Record<string, unknown>),
+              ...(params.metadata as Record<string, unknown>),
               previousConversationId: conversation.previousConversationId,
             })
-          : metadata;
-      const sentAt = metaTimestampToDate(message.timestamp);
+          : params.metadata;
 
       const [createdMessage] = await this.prisma.$transaction([
         this.prisma.message.create({
           data: {
             conversationId: conversation.id,
             senderType: SenderType.CONTACT,
-            content,
-            sentAt,
+            content: params.content,
+            sentAt: params.sentAt,
             metadata: enrichedMetadata,
           },
           select: messageEventSelect,
         }),
         this.prisma.conversation.update({
           where: { id: conversation.id },
-          data: { lastCustomerMessageAt: sentAt },
+          data: { lastCustomerMessageAt: params.sentAt },
           select: { id: true },
         }),
       ]);
 
       this.logger.log(
-        `Stored inbound ${channel} message meta_id=${message.id} conversation=${conversation.id} contact=${contact.id} company=${companyId}${
+        `Stored inbound WHATSAPP message provider_event=${params.providerEventId} conversation=${conversation.id} contact=${contact.id} company=${params.companyId}${
           conversation.previousConversationId
             ? ` (reopened from closed=${conversation.previousConversationId})`
             : ''
         }`,
       );
 
-      // Emit realtime events AFTER the commit — order matters for the
-      // dashboard UX: conversation.created (if applicable) must land
-      // before the message.created for that conversation, so the UI can
-      // create the thread container before rendering the first bubble.
       if (conversation.created) {
         const fresh = await this.prisma.conversation.findUnique({
           where: { id: conversation.id },
@@ -256,60 +270,53 @@ export class WebhooksService {
       }
       this.realtime.emitMessageCreated(toMessageEventPayload(createdMessage));
 
-      if (this.config.get<string>('nodeEnv') !== 'production') {
+      const agents = this.config.getOrThrow<AgentsConfig>('agents');
+      const isProduction = this.config.get<string>('nodeEnv') === 'production';
+      if (!isProduction && !agents.runPipelineInDev) {
         await this.sendTestEchoResponse(
-          companyId,
-          message.from,
-          content,
+          params.companyId,
+          params.from,
+          params.content,
           conversation.id,
         );
         await this.dedupe.markProcessed(claim.id, 'test_echo');
         return;
       }
 
-      // Fire-and-forget pipeline execution. We do not await here — the
-      // controller has already ACKed, and PipelineService is itself
-      // resilient (it persists a failed AgentRun and returns normally
-      // on any internal error). The extended correlation context carries
-      // companyId / conversationId / messageId into every pipeline log.
       const messageId = createdMessage.id;
       void runWithExtendedContext(
-        { companyId, conversationId: conversation.id, messageId },
+        { companyId: params.companyId, conversationId: conversation.id, messageId },
         () =>
           this.pipeline
             .run({
-              companyId,
+              companyId: params.companyId,
               conversationId: conversation.id,
               messageId,
-              channel,
+              channel: Channel.WHATSAPP,
               inbound: {
-                content,
-                metaMessageId: message.id,
-                from: message.from,
+                content: params.content,
+                metaMessageId: params.providerEventId,
+                from: params.from,
               },
             })
             .then(() => undefined)
             .catch(async (error) => {
               this.logger.error(
-                `Unexpected pipeline error ${logContext()} meta_id=${message.id}: ${describeError(error)}`,
+                `Unexpected pipeline error ${logContext()} provider_event=${params.providerEventId}: ${describeError(error)}`,
               );
-              // The pipeline normally persists AgentRun(success=false) on
-              // its own. If the error escaped the pipeline's own try/catch
-              // (e.g. provider outage pre-AgentRun), capture to DLQ so an
-              // operator can replay with the same inputs.
               try {
                 await this.failedTasks.record({
-                  companyId,
+                  companyId: params.companyId,
                   taskType: 'pipeline.run',
                   payload: {
-                    companyId,
+                    companyId: params.companyId,
                     conversationId: conversation.id,
                     messageId,
-                    channel,
+                    channel: Channel.WHATSAPP,
                     inbound: {
-                      content,
-                      metaMessageId: message.id,
-                      from: message.from,
+                      content: params.content,
+                      metaMessageId: params.providerEventId,
+                      from: params.from,
                     },
                   },
                   error,
@@ -326,7 +333,7 @@ export class WebhooksService {
       await this.dedupe.markProcessed(claim.id, 'ingested');
     } catch (error) {
       this.logger.error(
-        `Failed to ingest inbound ${channel} message ${logContext()} meta_id=${message.id} from=${message.from}: ${describeError(error)}`,
+        `Failed to ingest inbound WHATSAPP message ${logContext()} provider_event=${params.providerEventId} from=${params.from}: ${describeError(error)}`,
       );
       await this.dedupe.markFailed(claim.id, describeError(error));
     }
@@ -555,8 +562,7 @@ export class WebhooksService {
   }
 
   /**
-   * Temporary echo for non-production — verifies inbound storage + 360dialog
-   * outbound + inbox visibility. Replaced by the agent pipeline in production.
+   * Temporary echo for non-production when AGENT_PIPELINE_IN_DEV is false.
    */
   private async sendTestEchoResponse(
     companyId: string,
@@ -567,7 +573,7 @@ export class WebhooksService {
     try {
       const echoText = `[TEST MODE] Received: "${incomingMessage}" — SimplexLabs agent pipeline will respond here.`;
 
-      const sentMessageId = await this.metaSenderService.sendTextMessage({
+      const sentMessageId = await this.whatsappSender.sendTextMessage({
         companyId,
         recipientPhone,
         text: echoText,

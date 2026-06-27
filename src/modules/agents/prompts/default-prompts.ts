@@ -20,7 +20,8 @@ export interface DefaultPrompt {
   maxTokens: number;
 }
 
-const DEFAULT_MODEL = 'llama-3.3-70b-versatile';
+const DEFAULT_MODEL = 'gpt-4o-mini';
+const RESPONDER_MODEL = 'gpt-4o';
 
 const ANALYZER_PROMPT = `You are the ANALYZER step of a production customer-service pipeline.
 
@@ -197,7 +198,7 @@ export const DEFAULT_PROMPTS: DefaultPrompt[] = [
   {
     role: AgentRole.RESPONDER,
     systemPrompt: RESPONDER_PROMPT,
-    model: DEFAULT_MODEL,
+    model: RESPONDER_MODEL,
     temperature: 0.6,
     maxTokens: 600,
   },

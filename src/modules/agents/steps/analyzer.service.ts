@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import {
-  GroqCompletionResult,
-  GroqService,
-} from '../providers/groq.service';
+  LlmCompletionResult,
+  OpenAiCompletionService,
+} from '../providers/openai-completion.service';
 import type { ResolvedPrompt } from '../prompts/prompt-resolver.service';
 import type { AnalyzedLanguage, AnalyzedUrgency, AnalyzerOutput, PipelineContext } from '../pipeline/pipeline-types';
 import {
@@ -26,7 +26,7 @@ export interface AnalyzerStepResult {
   };
   output: AnalyzerOutput;
   raw: string;
-  completion: GroqCompletionResult;
+  completion: LlmCompletionResult;
 }
 
 const VALID_LANGUAGES = new Set<AnalyzedLanguage>(['es', 'en']);
@@ -34,11 +34,11 @@ const VALID_URGENCY = new Set<AnalyzedUrgency>(['low', 'medium', 'high']);
 
 @Injectable()
 export class AnalyzerService {
-  constructor(private readonly groq: GroqService) {}
+  constructor(private readonly llm: OpenAiCompletionService) {}
 
   async run(input: AnalyzerStepInput): Promise<AnalyzerStepResult> {
     const userMessage = this.buildUserMessage(input.context);
-    const completion = await this.groq.complete({
+    const completion = await this.llm.complete({
       systemPrompt: input.prompt.systemPrompt,
       userMessage,
       model: input.prompt.model,

@@ -1,5 +1,5 @@
 /**
- * Parse a model completion that is expected to contain JSON. Groq's
+ * Parse a model completion that is expected to contain JSON. OpenAI's
  * `response_format: json_object` guarantees syntactically valid JSON, but
  * we still defend against:
  *   - accidental markdown fences (```json ... ```)

@@ -244,5 +244,8 @@ export interface PipelineResult {
   outboundMessageId: string | null;
   /** True when the run was skipped by a pre-/mid-flight control gate. */
   skipped?: boolean;
-  skipReason?: 'conversation_in_human_mode' | 'takeover_during_run';
+  skipReason?:
+    | 'conversation_in_human_mode'
+    | 'takeover_during_run'
+    | 'whatsapp_outbound_not_ready';
 }

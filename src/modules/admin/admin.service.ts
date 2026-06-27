@@ -7,6 +7,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import {
   NotificationType,
   PaymentMethod,
@@ -20,7 +21,7 @@ import { SupabaseAdminService } from '../../common/supabase/supabase-admin.servi
 import { EmailService } from '../notifications/adapters/email.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import type { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
-import { isPlatformSuperAdmin } from '../../common/auth/user-role.util';
+import { isPlatformSuperAdmin, canReceivePortalCredentialEmail } from '../../common/auth/user-role.util';
 import { CreateClientUserDto } from './dto/create-client-user.dto';
 import { CreateFullCompanyDto } from './dto/create-full-company.dto';
 import { CreateStaffUserDto } from './dto/create-staff-user.dto';
@@ -82,6 +83,7 @@ export class AdminService {
     private readonly email: EmailService,
     private readonly notifications: NotificationsService,
     private readonly subscriptions: SubscriptionsService,
+    private readonly config: ConfigService,
   ) {}
 
   /**
@@ -423,7 +425,6 @@ export class AdminService {
             lastName: dto.lastName,
             role_name: 'COMPANY_ADMIN',
             companyId: company.id,
-            credentialsSentAt: new Date(),
           },
           select: { id: true },
         }),
@@ -579,18 +580,22 @@ export class AdminService {
       where: { id: dto.userId },
       select: { id: true, email: true, role_name: true },
     });
-    if (!user || user.role_name !== 'CLIENT') {
+    if (!user || !canReceivePortalCredentialEmail(user.role_name)) {
       throw new NotFoundException('User not found');
     }
     if (user.email.toLowerCase() !== dto.email.toLowerCase()) {
       throw new BadRequestException('Email does not match the user record');
     }
 
+    const portalLoginUrl =
+      this.config.get<string[]>('frontendUrls')?.[0] ?? 'https://app.simplexlabs.org';
+
     const text = [
       `Hi ${dto.firstName},`,
       '',
       `Your SimplexLabs portal for ${dto.companyName} is ready.`,
       '',
+      `Sign in: ${portalLoginUrl}`,
       `Login email: ${dto.email}`,
       `Temporary password: ${dto.password}`,
       '',

@@ -35,7 +35,7 @@ export class UpdateAgentPromptDto {
 
   @ApiPropertyOptional({
     enum: SUPPORTED_MODELS,
-    description: 'Whitelisted Groq model identifier.',
+    description: 'Whitelisted OpenAI model identifier.',
   })
   @IsOptional()
   @IsIn(SUPPORTED_MODELS)

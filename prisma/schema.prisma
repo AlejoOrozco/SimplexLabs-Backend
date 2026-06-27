@@ -409,7 +409,7 @@ model CompanyChannel {
   companyId            String   @map("company_id")
   channel              Channel  @map("channel")
   /// Provider-specific identifier that inbound webhooks carry.
-  /// For WhatsApp: phone_number_id. For Instagram: ig business account id.
+  /// For Twilio WhatsApp: sender number as `whatsapp:+E164`.
   externalId           String   @map("external_id")
   /// Optional WhatsApp Business Account id (WABA) for reference.
   businessAccountId    String?  @map("business_account_id")

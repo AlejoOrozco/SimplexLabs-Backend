@@ -14,6 +14,20 @@ const TENANT_ROLE_SET = new Set<string>(TENANT_ROLES);
 /** Roles that may be assigned when a COMPANY_ADMIN creates users in their tenant. */
 export const TENANT_CREATABLE_ROLES = ['COMPANY_STAFF', 'CLIENT'] as const;
 
+/** Portal users who can receive onboarding credential emails from platform admin. */
+export const PORTAL_CREDENTIAL_EMAIL_ROLES = [
+  'CLIENT',
+  'COMPANY_ADMIN',
+] as const;
+
+const PORTAL_CREDENTIAL_EMAIL_ROLE_SET = new Set<string>(
+  PORTAL_CREDENTIAL_EMAIL_ROLES,
+);
+
+export function canReceivePortalCredentialEmail(roleName: string): boolean {
+  return PORTAL_CREDENTIAL_EMAIL_ROLE_SET.has(roleName);
+}
+
 const PLATFORM_PRIVILEGED_ROLES = new Set(['SUPER_ADMIN', 'SIMPLEX_STAFF']);
 
 export function isTenantRoleName(roleName: string): roleName is TenantRoleName {

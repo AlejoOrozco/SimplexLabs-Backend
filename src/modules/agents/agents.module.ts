@@ -8,7 +8,7 @@ import { PaymentsModule } from '../payments/payments.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { AgentsController } from './agents.controller';
 import { AgentsService } from './agents.service';
-import { GroqService } from './providers/groq.service';
+import { OpenAiCompletionService } from './providers/openai-completion.service';
 import { PromptResolverService } from './prompts/prompt-resolver.service';
 import { AgentDefaultsService } from './bootstrap/agent-defaults.service';
 import { AnalyzerService } from './steps/analyzer.service';
@@ -30,17 +30,17 @@ import { SandboxService } from './sandbox/sandbox.service';
  * AgentsModule wires the 5-step agent pipeline:
  *
  *   webhook inbound → PipelineService
- *     → AnalyzerService  (Groq JSON)
+ *     → AnalyzerService  (OpenAI JSON)
  *     → RetrieverService (Prisma only)
- *     → DeciderService   (Groq JSON)
+ *     → DeciderService   (OpenAI JSON)
  *     → ExecutorService  (deterministic)
- *     → ResponderService (Groq text)
+ *     → ResponderService (OpenAI text)
  *   → persist AgentRun + outbound Message
- *   → MetaSenderService.sendTextMessage
+ *   → WhatsAppSenderService.sendTextMessage
  *
  * Uses `forwardRef(WebhooksModule)` because WebhooksModule depends on
  * AgentsModule (for pipeline trigger) and AgentsModule depends on
- * MetaSenderService from WebhooksModule (for outbound sending).
+ * WhatsAppSenderService from WebhooksModule (for outbound sending).
  */
 @Module({
   imports: [
@@ -61,7 +61,7 @@ import { SandboxService } from './sandbox/sandbox.service';
   ],
   providers: [
     AgentsService,
-    GroqService,
+    OpenAiCompletionService,
     PromptResolverService,
     AgentDefaultsService,
     AnalyzerService,
