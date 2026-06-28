@@ -6,7 +6,6 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
-import { CreateCompanyDto } from './dto/create-company.dto';
 import { UpdateCompanyDto } from './dto/update-company.dto';
 import { CompanyResponseDto } from './dto/company-response.dto';
 import type { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
@@ -54,13 +53,6 @@ export class CompaniesService {
       throw new NotFoundException(`Company ${id} not found`);
     }
     return company;
-  }
-
-  async create(dto: CreateCompanyDto): Promise<CompanyResponseDto> {
-    return this.prisma.company.create({
-      data: dto,
-      select: companySelect,
-    });
   }
 
   async update(

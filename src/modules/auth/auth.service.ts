@@ -1,17 +1,13 @@
 import {
   Injectable,
   UnauthorizedException,
-  ConflictException,
-  InternalServerErrorException,
   Logger,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import type { SupabaseAdminClient } from '../../common/supabase/supabase-admin.service';
 import { SupabaseAdminService } from '../../common/supabase/supabase-admin.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AgentDefaultsService } from '../agents/bootstrap/agent-defaults.service';
 import { LoginDto } from './dto/login.dto';
-import { RegisterDto } from './dto/register.dto';
 import { AuthUserDto } from './dto/auth-response.dto';
 import { MeResponseDto } from './dto/me-response.dto';
 import { ACCOUNT_DEACTIVATED } from '../../common/auth/account-deactivated';
@@ -50,7 +46,6 @@ export class AuthService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly config: ConfigService,
     private readonly agentDefaults: AgentDefaultsService,
     private readonly permissionsService: PermissionsService,
     supabaseAdmin: SupabaseAdminService,
@@ -114,110 +109,6 @@ export class AuthService {
     };
   }
 
-  async register(dto: RegisterDto): Promise<AuthResult> {
-    const existing = await this.prisma.user.findUnique({
-      where: { email: dto.email },
-      select: { id: true },
-    });
-
-    if (existing) {
-      throw new ConflictException('Email already in use');
-    }
-
-    const { data: created, error: createErr } =
-      await this.supabase.auth.admin.createUser({
-        email: dto.email,
-        password: dto.password,
-        email_confirm: true,
-      });
-
-    if (createErr || !created.user) {
-      this.logger.error(
-        `Supabase createUser failed for ${dto.email}`,
-        createErr?.message,
-      );
-      throw new InternalServerErrorException('Failed to create auth account');
-    }
-
-    const supabaseUserId = created.user.id;
-
-    let dbUser: PersistedUser;
-    try {
-      dbUser = await this.prisma.$transaction(async (tx) => {
-        const company = await tx.company.create({
-          data: { name: dto.companyName, niche: dto.niche },
-          select: { id: true },
-        });
-
-        // Phase 1 bootstrap: every company gets a settings row on day one
-        // so later services (scheduling, payments, notifications) can
-        // read from a guaranteed-present record instead of null-checking.
-        // Full prompt seeding is deferred to the agents phase.
-        await tx.companySettings.create({
-          data: { companyId: company.id },
-          select: { id: true },
-        });
-
-        // Phase 2 bootstrap: seed default AgentConfig + AgentPrompts so
-        // the pipeline can run against this company from day one without
-        // any UI configuration step.
-        await this.agentDefaults.seedForCompany(company.id, { tx });
-
-        return tx.user.create({
-          data: {
-            supabaseId: supabaseUserId,
-            email: dto.email,
-            firstName: dto.firstName,
-            lastName: dto.lastName,
-            role_name: 'CLIENT',
-            companyId: company.id,
-          },
-          select: {
-            id: true,
-            email: true,
-            firstName: true,
-            lastName: true,
-            role_name: true,
-            companyId: true,
-            is_owner: true,
-          },
-        });
-      });
-    } catch (err) {
-      await this.safeDeleteSupabaseUser(supabaseUserId);
-      throw err;
-    }
-
-    const { data: sessionData, error: signInErr } =
-      await this.supabase.auth.signInWithPassword({
-        email: dto.email,
-        password: dto.password,
-      });
-
-    if (signInErr || !sessionData.session) {
-      await this.rollbackRegistration(
-        supabaseUserId,
-        dbUser.id,
-        dbUser.companyId,
-      );
-      throw new InternalServerErrorException(
-        'Failed to create session after registration',
-      );
-    }
-
-    const permissions = await this.permissionsService.resolvePermissions(
-      dbUser.id,
-    );
-
-    return {
-      user: this.toAuthUser(dbUser, permissions),
-      tokens: {
-        accessToken: sessionData.session.access_token,
-        refreshToken: sessionData.session.refresh_token,
-      },
-    };
-  }
-
   async refreshToken(refreshToken: string): Promise<AuthTokens> {
     const { data, error } = await this.supabase.auth.refreshSession({
       refresh_token: refreshToken,
@@ -238,15 +129,6 @@ export class AuthService {
     if (error) {
       this.logger.warn(`Supabase signOut returned error: ${error.message}`);
     }
-  }
-
-  getOAuthUrl(provider: 'google'): string {
-    const supabaseUrl = this.config.get<string>('supabase.url') ?? '';
-    // Use the primary (first) configured frontend URL as the OAuth redirect target.
-    const frontendUrls = this.config.get<string[]>('frontendUrls') ?? [];
-    const frontendUrl = frontendUrls[0] ?? '';
-    const redirect = encodeURIComponent(`${frontendUrl}/auth/callback`);
-    return `${supabaseUrl}/auth/v1/authorize?provider=${provider}&redirect_to=${redirect}`;
   }
 
   async handleOAuthCallback(accessToken: string): Promise<AuthResult> {
@@ -422,35 +304,5 @@ export class AuthService {
       companyId: user.companyId,
       permissions,
     };
-  }
-
-  private async safeDeleteSupabaseUser(supabaseUserId: string): Promise<void> {
-    const { error } = await this.supabase.auth.admin.deleteUser(supabaseUserId);
-    if (error) {
-      this.logger.error(
-        `Failed to rollback Supabase user ${supabaseUserId}: ${error.message}`,
-      );
-    }
-  }
-
-  private async rollbackRegistration(
-    supabaseUserId: string,
-    userId: string,
-    companyId: string | null,
-  ): Promise<void> {
-    try {
-      await this.prisma.$transaction(async (tx) => {
-        await tx.user.delete({ where: { id: userId } });
-        if (companyId) {
-          await tx.company.delete({ where: { id: companyId } });
-        }
-      });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'unknown error';
-      this.logger.error(
-        `Failed to rollback DB records for user ${userId}: ${message}`,
-      );
-    }
-    await this.safeDeleteSupabaseUser(supabaseUserId);
   }
 }

@@ -20,10 +20,7 @@ import {
 } from '../../common/decorators/current-user.decorator';
 import { NotificationsService } from './notifications.service';
 import { ListNotificationsQueryDto } from './dto/list-notifications-query.dto';
-import {
-  NotificationListResponseDto,
-  NotificationResponseDto,
-} from './dto/notification-response.dto';
+import { NotificationListResponseDto } from './dto/notification-response.dto';
 
 @ApiTags('Notifications')
 @ApiCookieAuth('access_token')
@@ -45,30 +42,6 @@ export class NotificationsController {
     return this.notifications.findAll(user, query);
   }
 
-  @RequirePermissions(PERM.companyNotificationsView)
-  @Get(':id')
-  @ApiOperation({ summary: 'Get a single notification (tenant-scoped).' })
-  findOne(
-    @Param('id', ParseUUIDPipe) id: string,
-    @CurrentUser() user: AuthenticatedUser,
-  ): Promise<NotificationResponseDto> {
-    return this.notifications.findOne(id, user);
-  }
-
-  @RequirePermissions(PERM.companyNotificationsManage)
-  @Post('mark-read/:id')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({
-    summary:
-      'Mark a notification as read (legacy path alias for dashboard clients).',
-  })
-  markReadLegacy(
-    @Param('id', ParseUUIDPipe) id: string,
-    @CurrentUser() user: AuthenticatedUser,
-  ): Promise<NotificationResponseDto> {
-    return this.notifications.markRead(id, user);
-  }
-
   @RequirePermissions(PERM.companyNotificationsManage)
   @Post(':id/read')
   @HttpCode(HttpStatus.OK)
@@ -79,7 +52,7 @@ export class NotificationsController {
   markRead(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: AuthenticatedUser,
-  ): Promise<NotificationResponseDto> {
+  ) {
     return this.notifications.markRead(id, user);
   }
 

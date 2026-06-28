@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   Logger,
@@ -9,6 +10,7 @@ import {
   BillingCycle,
   BillingRecordStatus,
   NotificationType,
+  Niche,
   PlanCategory,
   Prisma,
   SubStatus,
@@ -40,8 +42,47 @@ export interface CreateSubscriptionWithBillingInput {
   readonly companyId: string;
   readonly planId: string;
   readonly billingCycle: BillingCycle;
-  readonly initialPayment: number;
+  readonly initialPayment?: number | null;
   readonly startedAt: string;
+  readonly status?: SubStatus;
+  readonly nextBillingAt?: string | null;
+  readonly replaceExisting?: boolean;
+}
+
+export interface UpdateSubscriptionAdminInput {
+  readonly status?: SubStatus;
+  readonly billingCycle?: BillingCycle;
+  readonly initialPayment?: number | null;
+  readonly startedAt?: string;
+  readonly nextBillingAt?: string | null;
+}
+
+export interface SwapSubscriptionPlanInput {
+  readonly planId: string;
+  readonly billingCycle?: BillingCycle;
+  readonly initialPayment?: number | null;
+  readonly effectiveAt?: string;
+}
+
+export interface CompanyBillingOverviewDto {
+  readonly mrr: number;
+  readonly nextChargeAt: Date | null;
+  readonly subscriptions: Array<{
+    readonly id: string;
+    readonly status: SubStatus;
+    readonly category: PlanCategory | null;
+    readonly billingCycle: BillingCycle;
+    readonly planName: string;
+    readonly amount: number;
+    readonly nextBillingAt: Date | null;
+  }>;
+  readonly recentPayments: Array<{
+    readonly id: string;
+    readonly amount: string;
+    readonly paidAt: Date | null;
+    readonly isSetupFee: boolean;
+    readonly subscriptionId: string;
+  }>;
 }
 
 @Injectable()
@@ -113,29 +154,79 @@ export class SubscriptionsService {
     dto: CreateSubscriptionWithBillingInput,
     requesterId: string,
   ): Promise<SubscriptionResponseDto> {
-    await this.assertCompanyExists(dto.companyId);
+    return this.assignToCompany(dto.companyId, dto, requesterId);
+  }
+
+  async findByCompanyId(
+    companyId: string,
+  ): Promise<SubscriptionResponseDto[]> {
+    await this.assertCompanyExists(companyId);
+    const rows = await this.prisma.subscription.findMany({
+      where: { companyId },
+      include: subscriptionListInclude,
+      orderBy: { createdAt: 'desc' },
+    });
+    return rows.map(toSubscriptionResponseDto);
+  }
+
+  async assignToCompany(
+    companyId: string,
+    dto: CreateSubscriptionWithBillingInput,
+    requesterId: string,
+  ): Promise<SubscriptionResponseDto> {
+    await this.assertCompanyExists(companyId);
     const plan = await this.loadPlanForNewSubscription(dto.planId);
-    await this.assertNoActiveSubscriptionInCategory(
-      this.prisma,
-      dto.companyId,
+    await this.assertPlanMatchesCompanyNiche(companyId, plan.niche);
+
+    const existing = await this.findActiveSubscriptionInCategory(
+      companyId,
       plan.category,
     );
+    if (existing && !dto.replaceExisting) {
+      throw new ConflictException(
+        `This company already has an active ${plan.category} subscription (${existing.id}). Pass replaceExisting: true to swap atomically.`,
+      );
+    }
 
     const startedAt = new Date(dto.startedAt);
-    const periodEnd = this.computePeriodEnd(startedAt, dto.billingCycle);
+    const billingCycle = dto.billingCycle;
+    const periodEnd =
+      dto.nextBillingAt !== undefined && dto.nextBillingAt !== null
+        ? new Date(dto.nextBillingAt)
+        : this.computePeriodEnd(startedAt, billingCycle);
+    const status = dto.status ?? SubStatus.ACTIVE;
+    const initialPayment =
+      dto.initialPayment ??
+      (Number(plan.setupFee) > 0
+        ? Number(plan.setupFee)
+        : Number(plan.priceMonthly));
 
     const created = await this.prisma.$transaction(async (tx) => {
+      if (existing) {
+        await tx.subscription.update({
+          where: { id: existing.id },
+          data: {
+            status: SubStatus.CANCELLED,
+            cancelledAt: new Date(),
+            cancellationReason: 'Replaced by admin plan assignment',
+            pendingPlanId: null,
+            upgradeStatus: SubscriptionUpgradeStatus.NONE,
+          },
+        });
+      }
+
       const { subscriptionId } = await this.insertSubscriptionWithSetupBilling(
         tx,
         {
-          companyId: dto.companyId,
+          companyId,
           planId: dto.planId,
-          billingCycle: dto.billingCycle,
+          billingCycle,
           category: plan.category,
-          initialPayment: dto.initialPayment,
+          initialPayment,
           startedAt,
           periodEnd,
           requesterId,
+          status,
         },
       );
       return tx.subscription.findUniqueOrThrow({
@@ -145,6 +236,229 @@ export class SubscriptionsService {
     });
 
     return toSubscriptionResponseDto(created);
+  }
+
+  async updateAdmin(
+    companyId: string,
+    subscriptionId: string,
+    dto: UpdateSubscriptionAdminInput,
+  ): Promise<SubscriptionResponseDto> {
+    const sub = await this.loadCompanySubscriptionOrThrow(
+      companyId,
+      subscriptionId,
+    );
+
+    const data: Prisma.SubscriptionUpdateInput = {};
+    if (dto.status !== undefined) {
+      data.status = dto.status;
+      if (dto.status === SubStatus.CANCELLED) {
+        data.cancelledAt = new Date();
+      }
+      if (dto.status === SubStatus.ACTIVE) {
+        data.cancelledAt = null;
+        data.cancellationReason = null;
+        data.overdueSince = null;
+      }
+    }
+    if (dto.billingCycle !== undefined) data.billingCycle = dto.billingCycle;
+    if (dto.initialPayment !== undefined && dto.initialPayment !== null) {
+      data.initialPayment = new Prisma.Decimal(dto.initialPayment);
+    }
+    if (dto.startedAt !== undefined) {
+      data.startedAt = new Date(dto.startedAt);
+    }
+    if (dto.nextBillingAt !== undefined) {
+      data.nextBillingAt =
+        dto.nextBillingAt === null ? null : new Date(dto.nextBillingAt);
+    }
+
+    const updated = await this.prisma.subscription.update({
+      where: { id: sub.id },
+      data,
+      include: subscriptionListInclude,
+    });
+    return toSubscriptionResponseDto(updated);
+  }
+
+  async swapPlanImmediate(
+    companyId: string,
+    subscriptionId: string,
+    dto: SwapSubscriptionPlanInput,
+    requesterId: string,
+  ): Promise<SubscriptionResponseDto> {
+    const sub = await this.loadCompanySubscriptionOrThrow(
+      companyId,
+      subscriptionId,
+    );
+    const newPlan = await this.loadPlanForNewSubscription(dto.planId);
+    if (!sub.category || newPlan.category !== sub.category) {
+      throw new BadRequestException(
+        'Cannot swap to a plan in a different category',
+      );
+    }
+    await this.assertPlanMatchesCompanyNiche(companyId, newPlan.niche);
+
+    const effectiveAt = dto.effectiveAt ? new Date(dto.effectiveAt) : new Date();
+    const billingCycle = dto.billingCycle ?? sub.billingCycle;
+    const periodEnd = this.computePeriodEnd(effectiveAt, billingCycle);
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      await tx.subscription.update({
+        where: { id: sub.id },
+        data: {
+          status: SubStatus.CANCELLED,
+          cancelledAt: effectiveAt,
+          cancellationReason: 'Plan swapped by admin',
+          pendingPlanId: null,
+          upgradeStatus: SubscriptionUpgradeStatus.NONE,
+        },
+      });
+
+      const initialPayment =
+        dto.initialPayment ??
+        (Number(newPlan.setupFee) > 0
+          ? Number(newPlan.setupFee)
+          : Number(newPlan.priceMonthly));
+
+      const { subscriptionId: newSubId } =
+        await this.insertSubscriptionWithSetupBilling(tx, {
+          companyId,
+          planId: dto.planId,
+          billingCycle,
+          category: newPlan.category,
+          initialPayment,
+          startedAt: effectiveAt,
+          periodEnd,
+          requesterId,
+          status: SubStatus.ACTIVE,
+        });
+
+      return tx.subscription.findUniqueOrThrow({
+        where: { id: newSubId },
+        include: subscriptionListInclude,
+      });
+    });
+
+    return toSubscriptionResponseDto(updated);
+  }
+
+  async reactivate(
+    companyId: string,
+    subscriptionId: string,
+  ): Promise<SubscriptionResponseDto> {
+    const sub = await this.loadCompanySubscriptionOrThrow(
+      companyId,
+      subscriptionId,
+    );
+    if (sub.status === SubStatus.ACTIVE) {
+      return toSubscriptionResponseDto(sub);
+    }
+    if (!sub.category) {
+      throw new BadRequestException('Subscription has no category');
+    }
+
+    const conflicting = await this.findActiveSubscriptionInCategory(
+      companyId,
+      sub.category,
+    );
+    if (conflicting && conflicting.id !== sub.id) {
+      throw new ConflictException(
+        `Cannot reactivate: company already has an active ${sub.category} subscription (${conflicting.id}).`,
+      );
+    }
+
+    const updated = await this.prisma.subscription.update({
+      where: { id: sub.id },
+      data: {
+        status: SubStatus.ACTIVE,
+        cancelledAt: null,
+        cancellationReason: null,
+        overdueSince: null,
+      },
+      include: subscriptionListInclude,
+    });
+    return toSubscriptionResponseDto(updated);
+  }
+
+  async getCompanyBillingOverview(
+    companyId: string,
+  ): Promise<CompanyBillingOverviewDto> {
+    await this.assertCompanyExists(companyId);
+
+    const [subscriptions, recentPayments] = await Promise.all([
+      this.prisma.subscription.findMany({
+        where: { companyId, status: SubStatus.ACTIVE },
+        include: {
+          plan: {
+            select: {
+              name: true,
+              priceMonthly: true,
+              priceAnnual: true,
+            },
+          },
+        },
+        orderBy: { nextBillingAt: 'asc' },
+      }),
+      this.prisma.billingRecord.findMany({
+        where: { companyId, status: BillingRecordStatus.PAID },
+        orderBy: { paidAt: 'desc' },
+        take: 10,
+        select: {
+          id: true,
+          amount: true,
+          paidAt: true,
+          isSetupFee: true,
+          subscriptionId: true,
+        },
+      }),
+    ]);
+
+    const subscriptionSummaries = subscriptions.map((s) => {
+      const amount =
+        s.billingCycle === BillingCycle.MONTHLY
+          ? Number(s.plan.priceMonthly)
+          : s.plan.priceAnnual
+            ? Number(s.plan.priceAnnual)
+            : Number(s.plan.priceMonthly);
+      return {
+        id: s.id,
+        status: s.status,
+        category: s.category,
+        billingCycle: s.billingCycle,
+        planName: s.plan.name,
+        amount,
+        nextBillingAt: s.nextBillingAt,
+      };
+    });
+
+    const mrr = subscriptions.reduce((sum, s) => {
+      const monthly =
+        s.billingCycle === BillingCycle.MONTHLY
+          ? Number(s.plan.priceMonthly)
+          : s.plan.priceAnnual
+            ? Number(s.plan.priceAnnual) / 12
+            : Number(s.plan.priceMonthly);
+      return sum + monthly;
+    }, 0);
+
+    const nextChargeAt =
+      subscriptions
+        .map((s) => s.nextBillingAt)
+        .filter((d): d is Date => d !== null)
+        .sort((a, b) => a.getTime() - b.getTime())[0] ?? null;
+
+    return {
+      mrr,
+      nextChargeAt,
+      subscriptions: subscriptionSummaries,
+      recentPayments: recentPayments.map((p) => ({
+        id: p.id,
+        amount: p.amount.toString(),
+        paidAt: p.paidAt,
+        isSetupFee: p.isSetupFee,
+        subscriptionId: p.subscriptionId,
+      })),
+    };
   }
 
   /**
@@ -163,12 +477,17 @@ export class SubscriptionsService {
     );
     const startedAt = new Date(dto.startedAt);
     const periodEnd = this.computePeriodEnd(startedAt, dto.billingCycle);
+    const initialPayment =
+      dto.initialPayment ??
+      (Number(plan.setupFee) > 0
+        ? Number(plan.setupFee)
+        : Number(plan.priceMonthly));
     await this.insertSubscriptionWithSetupBilling(tx, {
       companyId: dto.companyId,
       planId: dto.planId,
       billingCycle: dto.billingCycle,
       category: plan.category,
-      initialPayment: dto.initialPayment,
+      initialPayment,
       startedAt,
       periodEnd,
       requesterId,
@@ -345,7 +664,7 @@ export class SubscriptionsService {
 
   async cancel(
     subscriptionId: string,
-    reason: string,
+    reason: string | undefined,
     user: AuthenticatedUser,
   ): Promise<{ cancelled: boolean }> {
     const sub = await this.loadSubscriptionDetailOrThrow(subscriptionId, user);
@@ -355,7 +674,7 @@ export class SubscriptionsService {
       data: {
         status: SubStatus.CANCELLED,
         cancelledAt: new Date(),
-        cancellationReason: reason,
+        cancellationReason: reason ?? null,
       },
     });
 
@@ -497,6 +816,7 @@ export class SubscriptionsService {
       startedAt: Date;
       periodEnd: Date;
       requesterId: string;
+      status?: SubStatus;
     },
   ): Promise<{ subscriptionId: string }> {
     const subscription = await tx.subscription.create({
@@ -505,7 +825,7 @@ export class SubscriptionsService {
         planId: input.planId,
         category: input.category,
         billingCycle: input.billingCycle,
-        status: SubStatus.ACTIVE,
+        status: input.status ?? SubStatus.ACTIVE,
         initialPayment: new Prisma.Decimal(input.initialPayment),
         startedAt: input.startedAt,
         currentPeriodStart: input.startedAt,
@@ -538,6 +858,7 @@ export class SubscriptionsService {
     client: Prisma.TransactionClient | PrismaService = this.prisma,
   ): Promise<{
     category: PlanCategory;
+    niche: Niche;
     priceMonthly: Prisma.Decimal;
     priceAnnual: Prisma.Decimal | null;
     setupFee: Prisma.Decimal;
@@ -547,6 +868,7 @@ export class SubscriptionsService {
       select: {
         id: true,
         category: true,
+        niche: true,
         isActive: true,
         priceMonthly: true,
         priceAnnual: true,
@@ -558,10 +880,59 @@ export class SubscriptionsService {
     }
     return {
       category: plan.category,
+      niche: plan.niche,
       priceMonthly: plan.priceMonthly,
       priceAnnual: plan.priceAnnual,
       setupFee: plan.setupFee,
     };
+  }
+
+  private async assertPlanMatchesCompanyNiche(
+    companyId: string,
+    planNiche: Niche,
+  ): Promise<void> {
+    const company = await this.prisma.company.findUnique({
+      where: { id: companyId },
+      select: { niche: true },
+    });
+    if (!company) {
+      throw new NotFoundException(`Company ${companyId} not found`);
+    }
+    if (company.niche !== planNiche) {
+      throw new BadRequestException(
+        `Plan niche (${planNiche}) does not match company niche (${company.niche})`,
+      );
+    }
+  }
+
+  private async findActiveSubscriptionInCategory(
+    companyId: string,
+    category: PlanCategory,
+  ): Promise<{ id: string } | null> {
+    return this.prisma.subscription.findFirst({
+      where: {
+        companyId,
+        category,
+        status: { in: [SubStatus.ACTIVE, SubStatus.PAUSED] },
+      },
+      select: { id: true },
+    });
+  }
+
+  private async loadCompanySubscriptionOrThrow(
+    companyId: string,
+    subscriptionId: string,
+  ): Promise<SubscriptionDetailRow> {
+    const sub = await this.prisma.subscription.findFirst({
+      where: { id: subscriptionId, companyId },
+      include: subscriptionDetailInclude,
+    });
+    if (!sub) {
+      throw new NotFoundException(
+        `Subscription ${subscriptionId} not found for company ${companyId}`,
+      );
+    }
+    return sub;
   }
 
   private async assertNoActiveSubscriptionInCategory(

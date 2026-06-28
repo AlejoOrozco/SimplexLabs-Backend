@@ -17,13 +17,9 @@ import type { Request, Response, CookieOptions } from 'express';
 import type { CookieConfig } from '../../config/configuration';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
-import { RegisterDto } from './dto/register.dto';
 import { AuthUserDto } from './dto/auth-response.dto';
 import { MeResponseDto } from './dto/me-response.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
-import { PermissionsGuard } from '../../common/guards/permissions.guard';
-import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
-import { PERM } from '../../common/auth/permission-keys';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import { getCookieValue } from '../../common/http/cookie.util';
@@ -39,10 +35,6 @@ interface RefreshResult {
 
 interface LogoutResult {
   loggedOut: boolean;
-}
-
-interface OAuthUrlResult {
-  url: string;
 }
 
 @ApiTags('Auth')
@@ -64,25 +56,6 @@ export class AuthController {
     @Res({ passthrough: true }) res: Response,
   ): Promise<AuthUserDto> {
     const { user, tokens } = await this.authService.login(dto);
-    this.setAuthCookies(res, tokens.accessToken, tokens.refreshToken);
-    return user;
-  }
-
-  @Post('register')
-  @HttpCode(HttpStatus.CREATED)
-  @UseGuards(JwtAuthGuard, PermissionsGuard)
-  @RequirePermissions(PERM.platformAdminAccess)
-  @ApiCookieAuth('access_token')
-  @Throttle({ default: { limit: 5, ttl: 60_000 } })
-  @ApiOperation({
-    summary:
-      'Register new client and company (SUPER_ADMIN only; prefer POST /admin/companies/create-full then POST /admin/users/create-client)',
-  })
-  async register(
-    @Body() dto: RegisterDto,
-    @Res({ passthrough: true }) res: Response,
-  ): Promise<AuthUserDto> {
-    const { user, tokens } = await this.authService.register(dto);
     this.setAuthCookies(res, tokens.accessToken, tokens.refreshToken);
     return user;
   }
@@ -141,12 +114,6 @@ export class AuthController {
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<MeResponseDto> {
     return this.authService.completeFirstLogin(user.id);
-  }
-
-  @Get('oauth/google')
-  @ApiOperation({ summary: 'Get Google OAuth redirect URL' })
-  googleOAuth(): OAuthUrlResult {
-    return { url: this.authService.getOAuthUrl('google') };
   }
 
   @Post('oauth/callback')

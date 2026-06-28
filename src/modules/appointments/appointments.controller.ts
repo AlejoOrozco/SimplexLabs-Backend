@@ -1,7 +1,6 @@
 import {
   Body,
   Controller,
-  Delete,
   Get,
   HttpCode,
   HttpStatus,
@@ -15,9 +14,7 @@ import { ApiCookieAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AppointmentsService } from './appointments.service';
 import { AttendeesService } from '../attendees/attendees.service';
 import { CreateAppointmentDto } from './dto/create-appointment.dto';
-import { UpdateAppointmentDto } from './dto/update-appointment.dto';
 import { AppointmentResponseDto } from './dto/appointment-response.dto';
-import { RejectAppointmentDto } from './dto/reject-appointment.dto';
 import { MarkCallbackHandledDto } from './dto/mark-callback-handled.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
@@ -119,28 +116,6 @@ export class AppointmentsController {
     return this.appointmentsService.markCallbackHandled(id, dto, user);
   }
 
-  @Put(':id')
-  @RequirePermissions(PERM.companyAppointmentsManage)
-  @ApiOperation({ summary: 'Update appointment' })
-  update(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: UpdateAppointmentDto,
-    @CurrentUser() user: AuthenticatedUser,
-  ): Promise<AppointmentResponseDto> {
-    return this.appointmentsService.update(id, dto, user);
-  }
-
-  @Delete(':id')
-  @HttpCode(HttpStatus.OK)
-  @RequirePermissions(PERM.companyAppointmentsManage)
-  @ApiOperation({ summary: 'Delete appointment' })
-  remove(
-    @Param('id', ParseUUIDPipe) id: string,
-    @CurrentUser() user: AuthenticatedUser,
-  ): Promise<{ deleted: boolean }> {
-    return this.appointmentsService.remove(id, user);
-  }
-
   @Post(':id/confirm')
   @RequirePermissions(PERM.companyAppointmentsManage)
   @HttpCode(HttpStatus.OK)
@@ -153,20 +128,5 @@ export class AppointmentsController {
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<AppointmentResponseDto> {
     return this.appointmentsService.confirm(id, user);
-  }
-
-  @Post(':id/reject')
-  @RequirePermissions(PERM.companyAppointmentsManage)
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({
-    summary:
-      'Reject a PENDING/CONFIRMED appointment. Transitions status to CANCELLED.',
-  })
-  reject(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: RejectAppointmentDto,
-    @CurrentUser() user: AuthenticatedUser,
-  ): Promise<AppointmentResponseDto> {
-    return this.appointmentsService.reject(id, dto, user);
   }
 }

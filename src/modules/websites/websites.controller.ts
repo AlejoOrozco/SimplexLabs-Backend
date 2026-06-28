@@ -56,16 +56,6 @@ export class WebsitesController {
     return this.websitesService.checkLive(id, user);
   }
 
-  @RequirePermissions(PERM.companyWebsitesView)
-  @Get(':id')
-  @ApiOperation({ summary: 'Get website by id' })
-  findOne(
-    @Param('id', ParseUUIDPipe) id: string,
-    @CurrentUser() user: AuthenticatedUser,
-  ): Promise<WebsiteResponseDto> {
-    return this.websitesService.findOne(id, user);
-  }
-
   @RequirePermissions(PERM.companyWebsitesManage)
   @Post()
   @HttpCode(HttpStatus.CREATED)

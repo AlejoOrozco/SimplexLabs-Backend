@@ -7,18 +7,12 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
-  Put,
   UseGuards,
 } from '@nestjs/common';
 import { ApiCookieAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { BillingCycle } from '@prisma/client';
 import { SubscriptionsService } from './subscriptions.service';
-import { CreateSubscriptionDto } from './dto/create-subscription.dto';
 import { SubscriptionResponseDto } from './dto/subscription-response.dto';
-import { BillingRecordWithRecorderResponseDto } from './dto/billing-record-response.dto';
-import { ScheduleSubscriptionUpgradeDto } from './dto/schedule-subscription-upgrade.dto';
 import { RecordSubscriptionPaymentDto } from './dto/record-subscription-payment.dto';
-import { CancelSubscriptionDto } from './dto/cancel-subscription.dto';
 import { AdminBillingOverviewResponseDto } from './dto/admin-billing-overview.response.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
@@ -50,68 +44,6 @@ export class SubscriptionsController {
     return this.subscriptionsService.getAdminBillingOverview();
   }
 
-  @Get(':id')
-  @RequirePermissions(PERM.companyBillingView)
-  @ApiOperation({ summary: 'Get subscription by id' })
-  findOne(
-    @Param('id', ParseUUIDPipe) id: string,
-    @CurrentUser() user: AuthenticatedUser,
-  ): Promise<SubscriptionResponseDto> {
-    return this.subscriptionsService.findOne(id, user);
-  }
-
-  @Get(':id/history')
-  @RequirePermissions(PERM.companyBillingView)
-  @ApiOperation({ summary: 'Billing history for a subscription' })
-  getBillingHistory(
-    @Param('id', ParseUUIDPipe) id: string,
-    @CurrentUser() user: AuthenticatedUser,
-  ): Promise<BillingRecordWithRecorderResponseDto[]> {
-    return this.subscriptionsService.getBillingHistory(id, user);
-  }
-
-  @Post()
-  @RequirePermissions(PERM.platformAdminAccess)
-  @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ summary: 'Create subscription with setup billing record' })
-  create(
-    @Body() dto: CreateSubscriptionDto,
-    @CurrentUser() user: AuthenticatedUser,
-  ): Promise<SubscriptionResponseDto> {
-    return this.subscriptionsService.create(
-      {
-        companyId: dto.companyId,
-        planId: dto.planId,
-        billingCycle: dto.billingCycle ?? BillingCycle.MONTHLY,
-        initialPayment: dto.initialPayment,
-        startedAt: dto.startedAt,
-      },
-      user.id,
-    );
-  }
-
-  @Put(':id/schedule-upgrade')
-  @RequirePermissions(PERM.platformAdminAccess)
-  @ApiOperation({ summary: 'Schedule plan upgrade for next billing cycle' })
-  scheduleUpgrade(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: ScheduleSubscriptionUpgradeDto,
-    @CurrentUser() user: AuthenticatedUser,
-  ) {
-    return this.subscriptionsService.scheduleUpgrade(id, dto.newPlanId, user);
-  }
-
-  @Put(':id/cancel-upgrade')
-  @RequirePermissions(PERM.platformAdminAccess)
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Cancel a scheduled upgrade' })
-  cancelUpgrade(
-    @Param('id', ParseUUIDPipe) id: string,
-    @CurrentUser() user: AuthenticatedUser,
-  ) {
-    return this.subscriptionsService.cancelUpgrade(id, user);
-  }
-
   @Post(':id/record-payment')
   @HttpCode(HttpStatus.OK)
   @RequirePermissions(PERM.platformAdminAccess)
@@ -126,17 +58,5 @@ export class SubscriptionsController {
       user.id,
       user,
     );
-  }
-
-  @Put(':id/cancel')
-  @RequirePermissions(PERM.platformAdminAccess)
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Cancel subscription' })
-  cancel(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: CancelSubscriptionDto,
-    @CurrentUser() user: AuthenticatedUser,
-  ) {
-    return this.subscriptionsService.cancel(id, dto.reason, user);
   }
 }

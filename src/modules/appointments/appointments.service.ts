@@ -18,9 +18,7 @@ import {
 } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateAppointmentDto } from './dto/create-appointment.dto';
-import { UpdateAppointmentDto } from './dto/update-appointment.dto';
 import { AppointmentResponseDto } from './dto/appointment-response.dto';
-import { RejectAppointmentDto } from './dto/reject-appointment.dto';
 import { MarkCallbackHandledDto } from './dto/mark-callback-handled.dto';
 import { NotificationsService } from '../notifications/notifications.service';
 import { AttendeesService } from '../attendees/attendees.service';
@@ -162,99 +160,6 @@ export class AppointmentsService {
     return toAppointmentResponse(row);
   }
 
-  async update(
-    id: string,
-    dto: UpdateAppointmentDto,
-    requester: AuthenticatedUser,
-  ): Promise<AppointmentResponseDto> {
-    const existing = await this.loadOrThrow(id, requester);
-
-    if (
-      dto.contactId !== undefined ||
-      dto.productId !== undefined ||
-      dto.staffId !== undefined
-    ) {
-      await this.assertOptionalReferencesBelongToCompany(
-        {
-          contactId: dto.contactId,
-          productId: dto.productId,
-          staffId: dto.staffId,
-        },
-        existing.companyId,
-      );
-    }
-
-    const data: Prisma.AppointmentUpdateInput = {};
-    if (dto.title !== undefined) data.title = dto.title;
-    if (dto.description !== undefined) data.description = dto.description;
-    if (dto.type !== undefined) data.type = dto.type;
-    if (dto.status !== undefined) data.status = dto.status;
-    if (dto.scheduledAt !== undefined) {
-      data.scheduledAt = new Date(dto.scheduledAt);
-    }
-    if (dto.durationMinutes !== undefined) {
-      data.durationMinutes = dto.durationMinutes;
-    }
-    if (dto.meetingUrl !== undefined) data.meetingUrl = dto.meetingUrl;
-    if (dto.externalAttendeeName !== undefined) {
-      data.externalAttendeeName = dto.externalAttendeeName;
-    }
-    if (dto.externalAttendeeEmail !== undefined) {
-      data.externalAttendeeEmail = dto.externalAttendeeEmail;
-    }
-    if (dto.contactId !== undefined) {
-      data.contact = { connect: { id: dto.contactId } };
-    }
-    if (dto.productId !== undefined) {
-      data.product = { connect: { id: dto.productId } };
-    }
-    if (dto.staffId !== undefined) {
-      data.staff =
-        dto.staffId === null
-          ? { disconnect: true }
-          : { connect: { id: dto.staffId } };
-    }
-    if (dto.creatorTimezone !== undefined) {
-      data.creatorTimezone = dto.creatorTimezone;
-    }
-    if (dto.isRecurring !== undefined) {
-      data.isRecurring = dto.isRecurring;
-    }
-    if (dto.recurrenceRule !== undefined) {
-      data.recurrenceRule = dto.recurrenceRule;
-    }
-    if (dto.recurrenceParentId !== undefined) {
-      data.recurrenceParent = dto.recurrenceParentId
-        ? { connect: { id: dto.recurrenceParentId } }
-        : { disconnect: true };
-    }
-    if (dto.recurrenceEndDate !== undefined) {
-      data.recurrenceEndDate = dto.recurrenceEndDate
-        ? new Date(dto.recurrenceEndDate)
-        : null;
-    }
-
-    const row = await this.prisma.appointment.update({
-      where: { id },
-      data,
-      include: appointmentInclude,
-    });
-
-    await this.syncAttendeesIfProvided(row, dto, requester);
-
-    return toAppointmentResponse(row);
-  }
-
-  async remove(
-    id: string,
-    requester: AuthenticatedUser,
-  ): Promise<{ deleted: boolean }> {
-    await this.loadOrThrow(id, requester);
-
-    await this.prisma.appointment.delete({ where: { id } });
-    return { deleted: true };
-  }
-
   /**
    * Confirm a PENDING appointment.
    *
@@ -293,65 +198,6 @@ export class AppointmentsService {
     );
 
     await this.sendCustomerConfirmation(existing);
-
-    const refreshed = await this.prisma.appointment.findUniqueOrThrow({
-      where: { id },
-      include: appointmentInclude,
-    });
-    return toAppointmentResponse(refreshed);
-  }
-
-  /**
-   * Reject / cancel an appointment (client-initiated).
-   *
-   * Side effects:
-   *   1. Status → CANCELLED (from PENDING or CONFIRMED only).
-   *   2. Linked conversation lifecycle rolled back to AGENT_REPLIED_WAITING
-   *      so the agent can resume.
-   *
-   * No customer-facing message is sent in Phase 4 — the client decides what
-   * to say manually via the takeover flow. Reason is logged internally.
-   */
-  async reject(
-    id: string,
-    dto: RejectAppointmentDto,
-    requester: AuthenticatedUser,
-  ): Promise<AppointmentResponseDto> {
-    const existing = await this.loadOrThrow(id, requester);
-
-    if (existing.status === AppointmentStatus.CANCELLED) {
-      return toAppointmentResponse(existing);
-    }
-    if (existing.status === AppointmentStatus.COMPLETED) {
-      throw new ConflictException(
-        'Completed appointments cannot be cancelled.',
-      );
-    }
-
-    const flipped = await this.prisma.appointment.updateMany({
-      where: {
-        id,
-        status: {
-          in: [AppointmentStatus.PENDING, AppointmentStatus.CONFIRMED],
-        },
-      },
-      data: { status: AppointmentStatus.CANCELLED },
-    });
-    if (flipped.count === 0) {
-      throw new ConflictException(
-        'Appointment is no longer in a cancellable state.',
-      );
-    }
-
-    this.logger.log(
-      `Appointment rejected id=${id} by user=${requester.id} reason="${dto.reason ?? ''}"`,
-    );
-
-    await this.updateLifecycleForContact(
-      existing.companyId,
-      existing.contactId,
-      ConversationLifecycleStatus.AGENT_REPLIED_WAITING,
-    );
 
     const refreshed = await this.prisma.appointment.findUniqueOrThrow({
       where: { id },

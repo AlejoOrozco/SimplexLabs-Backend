@@ -9,7 +9,6 @@ import {
 import { ConfigService } from '@nestjs/config';
 import {
   ConversationLifecycleStatus,
-  NotificationType,
   OrderStatus,
   PaymentMethod,
   PaymentStatus,
@@ -18,7 +17,6 @@ import {
 import type Stripe from 'stripe';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ConversationLifecycleService } from '../conversations/conversation-lifecycle.service';
-import { NotificationsService } from '../notifications/notifications.service';
 import type { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import {
   assertTenantAccess,
@@ -27,12 +25,9 @@ import {
 import type { AppConfig } from '../../config/configuration';
 import { WebhookDedupeService } from '../../common/reliability/webhook-dedupe.service';
 import { InitiatePaymentDto } from './dto/initiate-payment.dto';
-import { ReviewWirePaymentDto } from './dto/review-wire-payment.dto';
-import { AttachWireScreenshotDto } from './dto/attach-wire-screenshot.dto';
 import {
   paymentInclude,
   toPaymentResponse,
-  type PaymentWithRelations,
 } from './payment.mapper';
 import { PaymentResponseDto } from './dto/payment-response.dto';
 import {
@@ -74,7 +69,6 @@ export class PaymentsService {
     private readonly stripe: StripeService,
     private readonly lifecycle: ConversationLifecycleService,
     private readonly config: ConfigService,
-    private readonly notifications: NotificationsService,
     private readonly dedupe: WebhookDedupeService,
   ) {}
 
@@ -89,14 +83,6 @@ export class PaymentsService {
       orderBy: { createdAt: 'desc' },
     });
     return rows.map(toPaymentResponse);
-  }
-
-  async findOne(
-    id: string,
-    requester: AuthenticatedUser,
-  ): Promise<PaymentResponseDto> {
-    const row = await this.loadOrThrow(id, requester);
-    return toPaymentResponse(row);
   }
 
   // ---------------------------------------------------------------------------
@@ -202,123 +188,6 @@ export class PaymentsService {
         settings.wireTransferInstructions ??
         'Please contact us for wire transfer instructions.',
     });
-  }
-
-  // ---------------------------------------------------------------------------
-  // Wire: screenshot upload (AWAITING_SCREENSHOT → PENDING_REVIEW)
-  // ---------------------------------------------------------------------------
-
-  async attachWireScreenshot(
-    id: string,
-    dto: AttachWireScreenshotDto,
-    requester: AuthenticatedUser,
-  ): Promise<PaymentResponseDto> {
-    const existing = await this.loadOrThrow(id, requester);
-    if (existing.method !== PaymentMethod.WIRE_TRANSFER) {
-      throw new BadRequestException(
-        'Only wire transfer payments accept a screenshot.',
-      );
-    }
-    if (existing.status !== PaymentStatus.AWAITING_SCREENSHOT) {
-      throw new ConflictException(
-        `Payment is in ${existing.status}; cannot attach a screenshot.`,
-      );
-    }
-
-    await this.prisma.$transaction(async (tx) => {
-      await tx.payment.update({
-        where: { id },
-        data: {
-          wireScreenshotUrl: dto.screenshotUrl,
-        },
-      });
-      await this.transitionWithinTx(tx, {
-        paymentId: id,
-        from: PaymentStatus.AWAITING_SCREENSHOT,
-        to: PaymentStatus.PENDING_REVIEW,
-        reason: 'wire_screenshot_uploaded',
-        metadata: { screenshotUrl: dto.screenshotUrl },
-      });
-    });
-
-    await this.lifecycle.transition(
-      existing.conversationId,
-      ConversationLifecycleStatus.PAYMENT_PENDING_REVIEW,
-    );
-
-    try {
-      await this.notifications.create({
-        companyId: existing.companyId,
-        type: NotificationType.PAYMENT_SCREENSHOT_RECEIVED,
-        title: 'Wire transfer screenshot received',
-        body: 'A customer uploaded a wire transfer screenshot. Review and approve or reject.',
-        conversationId: existing.conversationId,
-        payload: {
-          paymentId: existing.id,
-          orderId: existing.orderId,
-        },
-      });
-    } catch (error) {
-      this.logger.warn(
-        `Wire screenshot notification create failed payment=${existing.id}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-    }
-
-    return this.reload(id);
-  }
-
-  // ---------------------------------------------------------------------------
-  // Wire: review decision (approve / reject)
-  // ---------------------------------------------------------------------------
-
-  async reviewWire(
-    id: string,
-    dto: ReviewWirePaymentDto,
-    requester: AuthenticatedUser,
-  ): Promise<PaymentResponseDto> {
-    const existing = await this.loadOrThrow(id, requester);
-    if (existing.method !== PaymentMethod.WIRE_TRANSFER) {
-      throw new BadRequestException(
-        'Review is only applicable to wire transfer payments.',
-      );
-    }
-    if (existing.status !== PaymentStatus.PENDING_REVIEW) {
-      throw new ConflictException(
-        `Payment must be in PENDING_REVIEW to review; currently ${existing.status}.`,
-      );
-    }
-
-    const approve = dto.decision === 'APPROVE';
-    if (!approve && !dto.reason) {
-      throw new BadRequestException('Rejection reason is required.');
-    }
-
-    const nextStatus = approve ? PaymentStatus.CONFIRMED : PaymentStatus.FAILED;
-
-    await this.prisma.$transaction(async (tx) => {
-      await this.transitionWithinTx(tx, {
-        paymentId: id,
-        from: PaymentStatus.PENDING_REVIEW,
-        to: nextStatus,
-        reason: approve
-          ? (dto.reason ?? 'wire_approved')
-          : (dto.reason ?? 'wire_rejected'),
-        metadata: { reviewerId: requester.id },
-      });
-
-      if (approve && existing.orderId) {
-        await this.confirmOrderIfPossible(tx, existing.orderId, requester.id);
-      }
-    });
-
-    await this.dispatchPaymentLifecycle(
-      existing.conversationId,
-      nextStatus,
-    );
-
-    return this.reload(id);
   }
 
   // ---------------------------------------------------------------------------
@@ -803,36 +672,6 @@ export class PaymentsService {
     }
   }
 
-  private async dispatchPaymentLifecycle(
-    conversationId: string | null,
-    next: PaymentStatus,
-  ): Promise<void> {
-    switch (next) {
-      case PaymentStatus.CONFIRMED:
-        await this.lifecycle.transition(
-          conversationId,
-          ConversationLifecycleStatus.PAYMENT_CONFIRMED,
-        );
-        break;
-      case PaymentStatus.FAILED:
-      case PaymentStatus.CANCELLED:
-        // No dedicated enum for failure yet — keep AGENT_REPLIED_WAITING
-        // so the dashboard returns control to the agent path.
-        await this.lifecycle.transition(
-          conversationId,
-          ConversationLifecycleStatus.AGENT_REPLIED_WAITING,
-        );
-        break;
-      default:
-        break;
-    }
-  }
-
-  /**
-   * Return the active OPEN conversation for a contact on any channel so
-   * `Payment.conversationId` can be set. Best-effort — wire-only flows
-   * initiated by an admin may have no live conversation and that's fine.
-   */
   private async resolveConversationId(
     companyId: string,
     contactId: string,
@@ -843,19 +682,6 @@ export class PaymentsService {
       select: { id: true },
     });
     return convo?.id ?? null;
-  }
-
-  private async loadOrThrow(
-    id: string,
-    requester: AuthenticatedUser,
-  ): Promise<PaymentWithRelations> {
-    const row = await this.prisma.payment.findUnique({
-      where: { id },
-      include: paymentInclude,
-    });
-    if (!row) throw new NotFoundException(`Payment ${id} not found`);
-    assertTenantAccess(row.companyId, requester);
-    return row;
   }
 
   private async reload(id: string): Promise<PaymentResponseDto> {

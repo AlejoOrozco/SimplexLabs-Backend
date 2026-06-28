@@ -17,7 +17,6 @@ import { UsersModule } from './modules/users/users.module';
 import { CompaniesModule } from './modules/companies/companies.module';
 import { PlansModule } from './modules/plans/plans.module';
 import { SubscriptionsModule } from './modules/subscriptions/subscriptions.module';
-import { ClientContactsModule } from './modules/client-contacts/client-contacts.module';
 import { WebsitesModule } from './modules/websites/websites.module';
 import { ProductsModule } from './modules/products/products.module';
 import { OrdersModule } from './modules/orders/orders.module';
@@ -27,7 +26,6 @@ import { WebhooksModule } from './modules/webhooks/webhooks.module';
 import { ChannelsModule } from './modules/channels/channels.module';
 import { AgentsModule } from './modules/agents/agents.module';
 import { RealtimeModule } from './modules/realtime/realtime.module';
-import { StaffModule } from './modules/staff/staff.module';
 import { SchedulingModule } from './modules/scheduling/scheduling.module';
 import { PaymentsModule } from './modules/payments/payments.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
@@ -57,7 +55,6 @@ import { DashboardModule } from './modules/dashboard/dashboard.module';
     CompaniesModule,
     PlansModule,
     SubscriptionsModule,
-    ClientContactsModule,
     WebsitesModule,
     ProductsModule,
     OrdersModule,
@@ -66,7 +63,6 @@ import { DashboardModule } from './modules/dashboard/dashboard.module';
     RealtimeModule,
     ConversationsModule,
     ChannelsModule,
-    StaffModule,
     SchedulingModule,
     PaymentsModule,
     NotificationsModule,

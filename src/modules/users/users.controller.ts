@@ -1,10 +1,7 @@
 import {
   Controller,
   Get,
-  Post,
-  Put,
   Delete,
-  Body,
   Param,
   ParseUUIDPipe,
   UseGuards,
@@ -13,8 +10,6 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiCookieAuth } from '@nestjs/swagger';
 import { UsersService } from './users.service';
-import { CreateUserDto } from './dto/create-user.dto';
-import { UpdateUserDto } from './dto/update-user.dto';
 import { UserResponseDto } from './dto/user-response.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
@@ -51,31 +46,6 @@ export class UsersController {
   }
 
   @RequirePermissions(PERM.companyUsersManage)
-  @Post()
-  @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({
-    summary:
-      'Create user — platform super-admin or company admin (tenant-scoped)',
-  })
-  create(
-    @Body() dto: CreateUserDto,
-    @CurrentUser() user: AuthenticatedUser,
-  ): Promise<UserResponseDto> {
-    return this.usersService.create(dto, user);
-  }
-
-  @RequirePermissions(PERM.companyUsersManage)
-  @Put(':id')
-  @ApiOperation({ summary: 'Update user' })
-  update(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: UpdateUserDto,
-    @CurrentUser() user: AuthenticatedUser,
-  ): Promise<UserResponseDto> {
-    return this.usersService.update(id, dto, user);
-  }
-
-  @RequirePermissions(PERM.companyUsersManage)
   @Delete(':id')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
@@ -87,15 +57,5 @@ export class UsersController {
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<{ deleted: boolean }> {
     return this.usersService.remove(id, user);
-  }
-
-  @RequirePermissions(PERM.companyUsersManage)
-  @Put('me/complete-first-login')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Mark first login tour as completed' })
-  completeFirstLogin(
-    @CurrentUser() user: AuthenticatedUser,
-  ): Promise<UserResponseDto> {
-    return this.usersService.completeFirstLogin(user.id);
   }
 }

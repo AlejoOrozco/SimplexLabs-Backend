@@ -12,7 +12,6 @@ import {
   NotificationType,
   PaymentMethod,
   PlanCategory,
-  Prisma,
   SubStatus,
 } from '@prisma/client';
 import { randomInt } from 'crypto';
@@ -25,7 +24,6 @@ import { isPlatformSuperAdmin, canReceivePortalCredentialEmail } from '../../com
 import { CreateClientUserDto } from './dto/create-client-user.dto';
 import { CreateFullCompanyDto } from './dto/create-full-company.dto';
 import { CreateStaffUserDto } from './dto/create-staff-user.dto';
-import { SaveOnboardingDraftDto } from './dto/save-onboarding-draft.dto';
 import { SendOnboardingCredentialsDto } from './dto/send-onboarding-credentials.dto';
 import { DeactivateClientDto } from './dto/deactivate-client.dto';
 import {
@@ -39,11 +37,6 @@ import {
 } from '../agents/validation/limits';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 import { AdminCompanyListRowDto } from './dto/admin-company-list-row.dto';
-
-export interface OnboardingDraftResponseDto {
-  readonly step: number;
-  readonly data: Record<string, unknown>;
-}
 
 export interface CreateFullCompanyResultDto {
   readonly companyId: string;
@@ -165,51 +158,6 @@ export class AdminService {
         totalOrders: row._count.orders,
       };
     });
-  }
-
-  async saveOnboardingDraft(
-    dto: SaveOnboardingDraftDto,
-    adminId: string,
-  ): Promise<{ draftId: string }> {
-    const data = dto.data as Prisma.InputJsonValue;
-    if (dto.draftId) {
-      const updated = await this.prisma.onboardingWizardDraft.updateMany({
-        where: { id: dto.draftId, createdById: adminId },
-        data: { step: dto.step, data },
-      });
-      if (updated.count === 0) {
-        throw new NotFoundException('Draft not found');
-      }
-      return { draftId: dto.draftId };
-    }
-    const created = await this.prisma.onboardingWizardDraft.create({
-      data: {
-        createdById: adminId,
-        step: dto.step,
-        data,
-      },
-      select: { id: true },
-    });
-    return { draftId: created.id };
-  }
-
-  async getOnboardingDraft(
-    draftId: string,
-    adminId: string,
-  ): Promise<OnboardingDraftResponseDto> {
-    const row = await this.prisma.onboardingWizardDraft.findFirst({
-      where: { id: draftId, createdById: adminId },
-      select: { step: true, data: true },
-    });
-    if (!row) {
-      throw new NotFoundException('Draft not found');
-    }
-    const raw = row.data;
-    const data =
-      raw && typeof raw === 'object' && !Array.isArray(raw)
-        ? (raw as Record<string, unknown>)
-        : {};
-    return { step: row.step, data };
   }
 
   async createFullCompany(

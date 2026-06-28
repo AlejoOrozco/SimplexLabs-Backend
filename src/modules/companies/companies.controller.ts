@@ -1,7 +1,6 @@
 import {
   Controller,
   Get,
-  Post,
   Put,
   Delete,
   Body,
@@ -13,7 +12,6 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiCookieAuth } from '@nestjs/swagger';
 import { CompaniesService } from './companies.service';
-import { CreateCompanyDto } from './dto/create-company.dto';
 import { UpdateCompanyDto } from './dto/update-company.dto';
 import { CompanyResponseDto } from './dto/company-response.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -45,14 +43,6 @@ export class CompaniesController {
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<CompanyResponseDto> {
     return this.companiesService.findOne(id, user);
-  }
-
-  @RequirePermissions(PERM.platformAdminAccess)
-  @Post()
-  @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ summary: 'Create company — platform admin only' })
-  create(@Body() dto: CreateCompanyDto): Promise<CompanyResponseDto> {
-    return this.companiesService.create(dto);
   }
 
   @RequirePermissions(PERM.companyCompaniesManage)

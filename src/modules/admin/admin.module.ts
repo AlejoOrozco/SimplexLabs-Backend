@@ -1,20 +1,24 @@
 import { Module, OnModuleInit } from '@nestjs/common';
 import { Channel, Prisma } from '@prisma/client';
 import { AgentsModule } from '../agents/agents.module';
+import { CompaniesModule } from '../companies/companies.module';
+import { PlansModule } from '../plans/plans.module';
 import { PipelineService } from '../agents/pipeline/pipeline.service';
 import { FailedTaskService } from '../../common/reliability/failed-task.service';
 import { FailedTasksController } from './failed-tasks.controller';
 import type { PipelineContext } from '../agents/pipeline/pipeline-types';
 import { NotificationsModule } from '../notifications/notifications.module';
-import { CuidParamPipe } from '../../common/pipes/cuid-param.pipe';
 import { AdminService } from './admin.service';
 import { AdminOnboardingController } from './admin-onboarding.controller';
 import { AdminCompaniesController } from './admin-companies.controller';
 import { AdminClientUsersController } from './admin-client-users.controller';
+import { AdminCompanySubscriptionsController } from './admin-company-subscriptions.controller';
+import { AdminCompanyHubController } from './admin-company-hub.controller';
+import { AdminPlansController } from './admin-plans.controller';
 import { AdminDashboardController } from './dashboard/admin-dashboard.controller';
 import { AdminDashboardService } from './dashboard/admin-dashboard.service';
 import { AdminClientDetailService } from './dashboard/admin-client-detail.service';
-import { AdminPipelineFailuresService } from './admin-pipeline-failures.service';
+import { AdminManageSummaryService } from './dashboard/admin-manage-summary.service';
 import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
 
 /**
@@ -29,20 +33,28 @@ import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
  * feature-agnostic.
  */
 @Module({
-  imports: [AgentsModule, NotificationsModule, SubscriptionsModule],
+  imports: [
+    AgentsModule,
+    CompaniesModule,
+    PlansModule,
+    NotificationsModule,
+    SubscriptionsModule,
+  ],
   controllers: [
     FailedTasksController,
     AdminOnboardingController,
     AdminCompaniesController,
     AdminClientUsersController,
+    AdminCompanySubscriptionsController,
+    AdminCompanyHubController,
+    AdminPlansController,
     AdminDashboardController,
   ],
   providers: [
     AdminService,
     AdminDashboardService,
     AdminClientDetailService,
-    AdminPipelineFailuresService,
-    CuidParamPipe,
+    AdminManageSummaryService,
   ],
 })
 export class AdminModule implements OnModuleInit {

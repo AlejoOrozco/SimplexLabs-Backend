@@ -1,6 +1,5 @@
 import { Module } from '@nestjs/common';
 import { ConversationsModule } from '../conversations/conversations.module';
-import { NotificationsModule } from '../notifications/notifications.module';
 import { PaymentsService } from './payments.service';
 import { PaymentsController } from './payments.controller';
 import { StripeWebhookController } from './stripe-webhook.controller';
@@ -18,7 +17,7 @@ import { StripeSignatureGuard } from './stripe-signature.guard';
  * state changes.
  */
 @Module({
-  imports: [ConversationsModule, NotificationsModule],
+  imports: [ConversationsModule],
   controllers: [PaymentsController, StripeWebhookController],
   providers: [PaymentsService, StripeService, StripeSignatureGuard],
   exports: [PaymentsService],
